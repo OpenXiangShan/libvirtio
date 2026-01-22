@@ -316,19 +316,15 @@ int virtio_queue_setup(struct virtio_device *dev, struct virtio_queue *vq,
 	gphys_addr = guest_pfn * guest_page_size;
 	gphys_size = vring_size(desc_count, align);
 
-	if (my_guest_physical_map(gphys_addr, gphys_size, &hphys_addr, &avail_size)) {
-		my_print("%s: my_guest_physcial_map failed\n", __FUNCTION__);
-		return -1;
-	}
-
-	if (virtio_setup_gphys_hphys_pair(dev, gphys_addr, hphys_addr, avail_size)) {
-		my_print("%s: virtio_setup_gphys_hphys_pair\n", __FUNCTION__);
-		return -1;
-	}
-
-	if (avail_size < gphys_size) {
-		my_print("%s: available size less than required size\n", __FUNCTION__);
-		return -1;
+	if (!my_guest_physical_map(gphys_addr, gphys_size, &hphys_addr, &avail_size)) {
+		if (avail_size < gphys_size) {
+			my_print("%s: available size less than required size\n", __FUNCTION__);
+			return -1;
+		}
+		if (virtio_setup_gphys_hphys_pair(dev, gphys_addr, hphys_addr, avail_size)) {
+			my_print("%s: virtio_setup_gphys_hphys_pair\n", __FUNCTION__);
+			return -1;
+		}
 	}
 
 	vring_init(&vq->vring, desc_count, NULL, gphys_addr, align);
