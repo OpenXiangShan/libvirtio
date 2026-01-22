@@ -191,6 +191,14 @@ void libvirtio_print(const char *fmt, ...)
 	va_end(ap);
 }
 
+int libvirtio_get_blk_capacity(void *priv)
+{
+	if (!libvirtio_ops || !libvirtio_ops->blk_ops.get_blk_capacity)
+		return -1;
+
+	return libvirtio_ops->blk_ops.get_blk_capacity(priv);
+}
+
 int libvirtio_submit_blk_io(uint64_t sector, void *buf, int len,
 			    uint8_t flags, void *priv)
 {

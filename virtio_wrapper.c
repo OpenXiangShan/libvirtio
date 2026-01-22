@@ -65,6 +65,8 @@ int virtio_mmio_create(const char *name, uint64_t start, int len, void *priv)
 	if (!dev)
 		return -1;
 
+	dev->priv = priv;
+
 	for (i = 0; i < VIRTIO_DEV_INFO_CNT; i++) {
 		if (!strcmp(virtio_dev_info[i].name, name))
 			emu = virtio_dev_info[i].create();
@@ -73,8 +75,6 @@ int virtio_mmio_create(const char *name, uint64_t start, int len, void *priv)
 		return -1;
 
 	virtio_mmio_dev_connect(name, dev, emu);
-
-	dev->priv = priv;
 
 	return 0;
 }

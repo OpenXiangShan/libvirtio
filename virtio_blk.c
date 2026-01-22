@@ -375,6 +375,7 @@ static int virtio_blk_connect(struct virtio_device *dev,
 			      struct virtio_emulator *emu)
 {
 	struct virtio_blk_dev *vbdev;
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
 
 	vbdev = (struct virtio_blk_dev *)my_alloc(sizeof(struct virtio_blk_dev));
 	if (!vbdev)
@@ -382,7 +383,9 @@ static int virtio_blk_connect(struct virtio_device *dev,
 
 	vbdev->vdev = dev;
 
-	vbdev->config.capacity = 1 * 1024 * 1024 * 1024 / VIRTIO_BLK_SECTOR_SIZE;
+	vbdev->config.capacity = my_get_blk_capacity(mdev->priv);
+	if (vbdev->config.capacity == -1)
+		vbdev->config.capacity = 1 * 1024 * 1024 * 1024 / VIRTIO_BLK_SECTOR_SIZE;
 	vbdev->config.seg_max = VIRTIO_BLK_DISK_SEG_MAX,
 	vbdev->config.blk_size = VIRTIO_BLK_SECTOR_SIZE;
 

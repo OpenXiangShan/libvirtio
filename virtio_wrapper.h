@@ -16,6 +16,7 @@ enum {
 
 struct libvirtio_blk_ops {
 	int (*submit_blk_io)(uint64_t sector, void *buf, int len, uint8_t flags, void *priv);
+	int (*get_blk_capacity)(void *priv);
 };
 
 struct libvirtio_net_ops {

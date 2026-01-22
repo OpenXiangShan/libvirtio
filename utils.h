@@ -45,11 +45,13 @@ int libvirtio_gphys_map(uint64_t gphys_addr, uint64_t gphys_size,
 void libvirtio_print(const char *fmt, ...);
 uint64_t libvirtio_alloc(int size);
 void libvirtio_free(uint64_t addr, int size);
+int libvirtio_get_blk_capacity(void *priv);
 int libvirtio_submit_blk_io(uint64_t sector, void *buf, int len,
 			    uint8_t flags, void *priv);
 int libvirtio_set_irq(void *priv);
 
 #define my_set_irq              libvirtio_set_irq
+#define my_get_blk_capacity     libvirtio_get_blk_capacity
 #define my_submit_blk_request   libvirtio_submit_blk_io
 #define my_guest_physical_read  libvirtio_gphys_read
 #define my_guest_physical_write libvirtio_gphys_write
