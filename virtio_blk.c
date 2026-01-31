@@ -1,4 +1,5 @@
 #include <stddef.h>
+#include <string.h>
 #include "virtio_wrapper.h"
 #include "virtio.h"
 #include "virtio_mmio.h"
@@ -380,6 +381,7 @@ static int virtio_blk_connect(struct virtio_device *dev,
 	vbdev = (struct virtio_blk_dev *)my_alloc(sizeof(struct virtio_blk_dev));
 	if (!vbdev)
 		return -1;
+	memset(vbdev, 0, sizeof(*vbdev));
 
 	vbdev->vdev = dev;
 
