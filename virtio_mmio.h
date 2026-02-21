@@ -26,6 +26,7 @@
 
 #include "utils.h"
 #include "virtio.h"
+#include "virtio_wrapper.h"
 
 /*
  * Control registers --> Copied from linux's virtio_mmio.h
@@ -159,6 +160,8 @@ struct virtio_mmio_dev {
 	struct list_head list;
 	struct virtio_device dev;
 	struct virtio_mmio_config config;
+	struct libvirtio_callback cb;
+	struct libvirtio_ops *ops;
 	uint64_t start;
 	uint64_t end;
 	void *priv;
@@ -171,6 +174,7 @@ int virtio_dev_mmio_write(struct virtio_mmio_dev *dev,
 struct virtio_mmio_dev *virtio_mmio_dev_get(uint64_t start, int len);
 void virtio_mmio_dev_connect(const char *name, struct virtio_mmio_dev *mmio_dev,
 			     struct virtio_emulator *emu);
-struct virtio_mmio_dev *virtio_dev_mmio_create(uint64_t start, uint64_t end);
+struct virtio_mmio_dev *virtio_dev_mmio_create(uint64_t start, uint64_t end,
+					       struct libvirtio_ops *ops);
 
 #endif /* __VMM_VIRTIO_MMIO_H__ */

@@ -20,7 +20,10 @@ struct libvirtio_blk_ops {
 };
 
 struct libvirtio_net_ops {
-
+	void (*set_mac)(uint8_t *mac, void *priv);
+	int  (*ctrl_mq)(int vq_pairs, void *priv);
+	int  (*read_tap)(uint64_t offset, void *buf, int len, void *priv);
+	int  (*write_tap)(uint64_t offset, void *buf, int len, void *priv);
 };
 
 struct libvirtio_ops {
@@ -38,9 +41,16 @@ struct libvirtio_ops {
 	struct   libvirtio_net_ops net_ops;
 };
 
-void libvirtio_set_ops(struct libvirtio_ops *ops);
+struct libvirtio_callback {
+	void *data;
+
+	int  (*receive)(void *buf, int len, void *data);
+};
+
+struct libvirtio_callback *libvirtio_get_callback(uint64_t addr);
 int virtio_mmio_read(uint64_t addr, uint32_t *val, int len);
 int virtio_mmio_write(uint64_t addr, uint32_t val, int len);
-int virtio_mmio_create(const char *name, uint64_t start, int len, void *priv);
+int virtio_mmio_create(const char *name, uint64_t start, int len,
+		       struct libvirtio_ops *ops, void *priv);
 
 #endif

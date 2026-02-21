@@ -83,6 +83,8 @@ struct virtio_queue {
 	uint64_t		guest_addr;
 	uint64_t		host_addr;
 	uint64_t		total_size;
+
+	struct virtio_device *vdev;
 };
 
 struct virtio_device_id {

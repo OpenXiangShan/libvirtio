@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "list.h"
+#include "virtio.h"
 
 #define u8 uint8_t
 #define u16 uint16_t
@@ -38,18 +39,36 @@ int memory_region_is_overlay(unsigned long start, unsigned long end,
 				    unsigned long new_start,
 				    unsigned long new_end);
 
-int libvirtio_gphys_read(uint64_t gpa, void *dst, uint32_t len);
-int libvirtio_gphys_write(uint64_t gpa, void *src, uint32_t len);
-int libvirtio_gphys_map(uint64_t gphys_addr, uint64_t gphys_size,
+int libvirtio_gphys_read(struct virtio_device *dev, uint64_t gpa, void *dst, uint32_t len);
+int libvirtio_gphys_write(struct virtio_device *dev, uint64_t gpa, void *src, uint32_t len);
+int libvirtio_gphys_map(struct virtio_device *dev,
+			uint64_t gphys_addr, uint64_t gphys_size,
 			uint64_t *hphys_addr, uint64_t *hphys_size);
-void libvirtio_print(const char *fmt, ...);
-uint64_t libvirtio_alloc(int size);
-void libvirtio_free(uint64_t addr, int size);
-int libvirtio_get_blk_capacity(void *priv);
-int libvirtio_submit_blk_io(uint64_t sector, void *buf, int len,
-			    uint8_t flags, void *priv);
-int libvirtio_set_irq(void *priv);
+void libvirtio_print(struct virtio_device *dev, const char *fmt, ...);
+uint64_t libvirtio_alloc(struct virtio_device *dev, int size);
+uint64_t libvirtio_zalloc(struct virtio_device *dev, int size);
+void libvirtio_free(struct virtio_device *dev, uint64_t addr, int size);
 
+/* virtio blk */
+int libvirtio_get_blk_capacity(struct virtio_device *dev);
+int libvirtio_submit_blk_io(struct virtio_device *dev,
+			    uint64_t sector, void *buf, int len,
+			    uint8_t flags);
+
+/* virtio net */
+int libvirtio_net_read_tap(struct virtio_device *dev, uint64_t offset,
+			   void *buf, int len);
+int libvirtio_net_write_tap(struct virtio_device *dev, uint64_t offset,
+			    void *buf, int len);
+int libvirtio_net_ctrl_mq(struct virtio_device *dev, int vq_pairs);
+int libvirtio_net_set_mac(struct virtio_device *dev, uint8_t *mac);
+
+int libvirtio_set_irq(struct virtio_device *dev);
+
+#define my_net_read_tap         libvirtio_net_read_tap
+#define my_net_write_tap        libvirtio_net_write_tap
+#define my_net_ctrl_mq          libvirtio_net_ctrl_mq
+#define my_net_set_mac          libvirtio_net_set_mac
 #define my_set_irq              libvirtio_set_irq
 #define my_get_blk_capacity     libvirtio_get_blk_capacity
 #define my_submit_blk_request   libvirtio_submit_blk_io
@@ -57,6 +76,7 @@ int libvirtio_set_irq(void *priv);
 #define my_guest_physical_write libvirtio_gphys_write
 #define my_guest_physical_map   libvirtio_gphys_map
 #define my_alloc                libvirtio_alloc
+#define my_zalloc               libvirtio_zalloc
 #define my_free                 libvirtio_free
 #define my_print                libvirtio_print
 

@@ -52,14 +52,14 @@ static int virtio_mmio_dev_notify(struct virtio_device *dev, uint32_t vq)
 
 	mdev->config.interrupt_state |= VMM_VIRTIO_MMIO_INT_VRING;
 
-	return my_set_irq(mdev->priv);
+	return my_set_irq(dev);
 }
 
 static int virtio_mmio_config_read(struct virtio_mmio_dev *mdev,
 				   uint32_t offset, void *dst, uint32_t dst_len)
 {
 	if (dst_len != 4) {
-		my_print("%s: %s invalid length=%d\n", __FUNCTION__, mdev->dev.name, dst_len);
+		my_print(&mdev->dev, "%s: %s invalid length=%d\n", __FUNCTION__, mdev->dev.name, dst_len);
 		return -1;
 	}
 
@@ -99,7 +99,7 @@ static int virtio_mmio_config_read(struct virtio_mmio_dev *mdev,
 		*(u32 *)dst = *((u32 *)((void *)&mdev->config.status));
 		break;
 	default:
-		my_print("%s: %s invalid offset=0x%x\n",
+		my_print(&mdev->dev, "%s: %s invalid offset=0x%x\n",
 			 __FUNCTION__, mdev->dev.name, offset);
 		return -1;
 	}
@@ -114,7 +114,7 @@ static int virtio_mmio_config_write(struct virtio_mmio_dev *mdev,
 	u32 val = *(u32 *)(src);
 
 	if (src_len != 4) {
-		my_print("%s: guest=%s invalid length=%d\n",
+		my_print(&mdev->dev, "%s: guest=%s invalid length=%d\n",
 			 __FUNCTION__, mdev->dev.name, src_len);
 		return -1;
 	}
@@ -166,7 +166,7 @@ static int virtio_mmio_config_write(struct virtio_mmio_dev *mdev,
 		mdev->config.status = val;
 		break;
 	default:
-		my_print("%s: guest=%s invalid offset=0x%x\n",
+		my_print(&mdev->dev, "%s: guest=%s invalid offset=0x%x\n",
 			 __FUNCTION__, mdev->dev.name, offset);
 		ret = -1;
 		break;
@@ -200,7 +200,7 @@ static int virtio_config_write(struct virtio_mmio_dev *mdev,
 int virtio_dev_mmio_write(struct virtio_mmio_dev *mdev,
 			  uint32_t offset, uint32_t val, uint32_t len)
 {
-//	my_print("%s offset:0x%x val:0x%x len:%d\n", __FUNCTION__, offset, val, len);
+//	my_print(&mdev->dev, "%s offset:0x%x val:0x%x len:%d\n", __FUNCTION__, offset, val, len);
 
 	/* Device specific config write */
 	if (offset >= VMM_VIRTIO_MMIO_CONFIG) {
@@ -214,7 +214,7 @@ int virtio_dev_mmio_write(struct virtio_mmio_dev *mdev,
 int virtio_dev_mmio_read(struct virtio_mmio_dev *mdev,
 			 uint32_t offset, uint32_t *val, uint32_t len)
 {
-//	my_print("%s offset:0x%x len:%d\n", __FUNCTION__, offset, len);
+//	my_print(&mdev->dev, "%s offset:0x%x len:%d\n", __FUNCTION__, offset, len);
 
 	/* Device specific config write */
 	if (offset >= VMM_VIRTIO_MMIO_CONFIG) {
@@ -253,7 +253,8 @@ static struct virtio_notify mmio_notify = {
 	.notify = virtio_mmio_dev_notify,
 };
 
-struct virtio_mmio_dev *virtio_dev_mmio_create(uint64_t start, uint64_t end)
+struct virtio_mmio_dev *virtio_dev_mmio_create(uint64_t start, uint64_t end,
+					       struct libvirtio_ops *ops)
 {
 	struct virtio_mmio_dev *mdev;
 
@@ -263,12 +264,16 @@ struct virtio_mmio_dev *virtio_dev_mmio_create(uint64_t start, uint64_t end)
 			return NULL;
 	}
 
-	mdev = (struct virtio_mmio_dev *)my_alloc(sizeof(*mdev));
+	if (!ops || !ops->mm_alloc)
+		return NULL;
+	mdev = (struct virtio_mmio_dev *)ops->mm_alloc(sizeof(*mdev));
 	if (!mdev)
 		return NULL;
 
 	mdev->start = start;
 	mdev->end = end;
+
+	mdev->ops = ops;
 
 	mdev->dev.vn = &mmio_notify;
 	mdev->dev.vn_data = (void *)mdev;

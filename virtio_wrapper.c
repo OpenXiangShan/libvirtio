@@ -33,6 +33,17 @@ static struct virtio_mmio_dev_info virtio_dev_info[] = {
 };
 #define VIRTIO_DEV_INFO_CNT (sizeof(virtio_dev_info) / sizeof(virtio_dev_info[0]))
 
+struct libvirtio_callback *libvirtio_get_callback(uint64_t addr)
+{
+	struct virtio_mmio_dev *mdev;
+
+	mdev = virtio_mmio_dev_get(addr, 1);
+	if (!mdev)
+		return NULL;
+
+	return &mdev->cb;
+}
+
 int virtio_mmio_read(uint64_t addr, uint32_t *val, int len)
 {
 	struct virtio_mmio_dev *dev;
@@ -55,13 +66,14 @@ int virtio_mmio_write(uint64_t addr, uint32_t val, int len)
 	return virtio_dev_mmio_write(dev, (uint32_t)(addr - dev->start), val, len);
 }
 
-int virtio_mmio_create(const char *name, uint64_t start, int len, void *priv)
+int virtio_mmio_create(const char *name, uint64_t start, int len,
+		       struct libvirtio_ops *ops, void *priv)
 {
 	struct virtio_mmio_dev *dev;
 	struct virtio_emulator *emu = NULL;
 	int i;
 
-	dev = virtio_dev_mmio_create(start, start + len);
+	dev = virtio_dev_mmio_create(start, start + len, ops);
 	if (!dev)
 		return -1;
 

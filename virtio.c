@@ -47,20 +47,20 @@ static int virtio_setup_gphys_hphys_pair(struct virtio_device *dev, uint64_t gph
 {
 	struct addr_trans_pair *pair;
 
-	//my_print("%s: gphys_addr:0x%lx hphys_addr:0x%lx size:0x%lx\n",
+	//my_print(dev, "%s: gphys_addr:0x%lx hphys_addr:0x%lx size:0x%lx\n",
 	//	 __FUNCTION__, gphys_addr, hphys_addr, len);
 
 	list_for_each_entry(pair, &dev->addr_trans_tables, list) {
 		if (memory_region_is_overlay(pair->gphys, pair->gphys + pair->size,
 					     gphys_addr, gphys_addr + len)) {
-			my_print("%s: warning!! memory region is overlay\n", __FUNCTION__);
+			my_print(dev, "%s: warning!! memory region is overlay\n", __FUNCTION__);
 			return -1;
 		}
 	}
 
-	pair = (struct addr_trans_pair *)my_alloc(sizeof(struct addr_trans_pair));
+	pair = (struct addr_trans_pair *)my_alloc(dev, sizeof(struct addr_trans_pair));
 	if (!pair) {
-		my_print("%s: alloc addr_trans_pair failed\n", __FUNCTION__);
+		my_print(dev, "%s: alloc addr_trans_pair failed\n", __FUNCTION__);
 		return -1;
 	}
 
@@ -154,9 +154,9 @@ void virtio_queue_set_avail_event(struct virtio_queue *vq)
 	val = vq->last_avail_idx;
 	avail_evt_pa = vq->vring.used_pa +
 		  offsetof(struct vring_used, ring[vq->vring.num]);
-	ret = my_guest_physical_write(avail_evt_pa, &val, sizeof(val));
+	ret = my_guest_physical_write(vq->vdev, avail_evt_pa, &val, sizeof(val));
 	if (ret != sizeof(val)) {
-		my_print("%s: write failed at avail_evt_pa=0x%lx\n",
+		my_print(vq->vdev, "%s: write failed at avail_evt_pa=0x%lx\n",
 			 __FUNCTION__, avail_evt_pa);
 	}
 }
@@ -175,9 +175,9 @@ void virtio_queue_set_used_elem(struct virtio_queue *vq,
 
 	used_idx_pa = vq->vring.used_pa +
 		      offsetof(struct vring_used, idx);
-	ret = my_guest_physical_read(used_idx_pa, &used_idx, sizeof(used_idx));
+	ret = my_guest_physical_read(vq->vdev, used_idx_pa, &used_idx, sizeof(used_idx));
 	if (ret != sizeof(used_idx)) {
-		my_print("%s: read failed at used_idx_pa=0x%lx\n",
+		my_print(vq->vdev, "%s: read failed at used_idx_pa=0x%lx\n",
 			 __FUNCTION__, used_idx_pa);
 	}
 
@@ -186,16 +186,16 @@ void virtio_queue_set_used_elem(struct virtio_queue *vq,
 	ret = umod32(used_idx, vq->vring.num);
 	used_elem_pa = vq->vring.used_pa +
 		       offsetof(struct vring_used, ring[ret]);
-	ret = my_guest_physical_write(used_elem_pa, &used_elem, sizeof(used_elem));
+	ret = my_guest_physical_write(vq->vdev, used_elem_pa, &used_elem, sizeof(used_elem));
 	if (ret != sizeof(used_elem)) {
-		my_print("%s: write failed at used_elem_pa=0x%lx\n",
+		my_print(vq->vdev, "%s: write failed at used_elem_pa=0x%lx\n",
 			 __FUNCTION__, used_elem_pa);
 	}
 
 	used_idx++;
-	ret = my_guest_physical_write(used_idx_pa, &used_idx, sizeof(used_idx));
+	ret = my_guest_physical_write(vq->vdev, used_idx_pa, &used_idx, sizeof(used_idx));
 	if (ret != sizeof(used_idx)) {
-		my_print("%s: write failed at used_idx_pa=0x%lx\n",
+		my_print(vq->vdev, "%s: write failed at used_idx_pa=0x%lx\n",
 			 __FUNCTION__, used_idx_pa);
 	}
 }
@@ -211,9 +211,9 @@ int virtio_queue_get_desc(struct virtio_queue *vq, unsigned short indx,
 	}
 
 	desc_pa = vq->vring.desc_pa + indx * sizeof(*desc);
-	ret = my_guest_physical_read(desc_pa, desc, sizeof(*desc));
+	ret = my_guest_physical_read(vq->vdev, desc_pa, desc, sizeof(*desc));
 	if (ret != sizeof(*desc)) {
-		my_print("%s: read failed at avail_pa=0x%lx\n",
+		my_print(vq->vdev, "%s: read failed at avail_pa=0x%lx\n",
 			 __FUNCTION__, desc_pa);
 		return -1;
 	}
@@ -235,9 +235,9 @@ unsigned short virtio_queue_pop(struct virtio_queue *vq)
 
 	avail_pa = vq->vring.avail_pa +
 		   offsetof(struct vring_avail, ring[ret]);
-	ret = my_guest_physical_read(avail_pa, &val, sizeof(val));
+	ret = my_guest_physical_read(vq->vdev, avail_pa, &val, sizeof(val));
 	if (ret != sizeof(val)) {
-		my_print("%s: read failed at avail_pa=0x%lx\n",
+		my_print(vq->vdev, "%s: read failed at avail_pa=0x%lx\n",
 			 __FUNCTION__, avail_pa);
 		return 0;
 	}
@@ -257,15 +257,14 @@ bool virtio_queue_available(struct virtio_queue *vq)
 
 	avail_pa = vq->vring.avail_pa +
 		   offsetof(struct vring_avail, idx);
-	ret = my_guest_physical_read(avail_pa, &val, sizeof(val));
+	ret = my_guest_physical_read(vq->vdev, avail_pa, &val, sizeof(val));
 	if (ret != sizeof(val)) {
-		my_print("%s: read failed at avail_pa=0x%lx\n",
+		my_print(vq->vdev, "%s: read failed at avail_pa=0x%lx\n",
 			 __FUNCTION__, avail_pa);
 		return false;
 	}
 
 	return val != vq->last_avail_idx;
-
 }
 
 bool virtio_queue_should_signal(struct virtio_queue *vq)
@@ -282,18 +281,18 @@ bool virtio_queue_should_signal(struct virtio_queue *vq)
 
 	used_pa = vq->vring.used_pa +
 		  offsetof(struct vring_used, idx);
-	ret = my_guest_physical_read(used_pa, &new_idx, sizeof(new_idx));
+	ret = my_guest_physical_read(vq->vdev, used_pa, &new_idx, sizeof(new_idx));
 	if (ret != sizeof(new_idx)) {
-		my_print("%s: read failed at used_pa=0x%lx\n",
+		my_print(vq->vdev, "%s: read failed at used_pa=0x%lx\n",
 			 __FUNCTION__, used_pa);
 		return false;
 	}
 
 	avail_pa = vq->vring.avail_pa +
 		   offsetof(struct vring_avail, ring[vq->vring.num]);
-	ret = my_guest_physical_read(avail_pa, &event_idx, sizeof(event_idx));
+	ret = my_guest_physical_read(vq->vdev, avail_pa, &event_idx, sizeof(event_idx));
 	if (ret != sizeof(event_idx)) {
-		my_print("%s: read failed at avail_pa=0x%lx\n",
+		my_print(vq->vdev, "%s: read failed at avail_pa=0x%lx\n",
 			 __FUNCTION__, avail_pa);
 		return false;
 	}
@@ -316,13 +315,13 @@ int virtio_queue_setup(struct virtio_device *dev, struct virtio_queue *vq,
 	gphys_addr = guest_pfn * guest_page_size;
 	gphys_size = vring_size(desc_count, align);
 
-	if (!my_guest_physical_map(gphys_addr, gphys_size, &hphys_addr, &avail_size)) {
+	if (!my_guest_physical_map(dev, gphys_addr, gphys_size, &hphys_addr, &avail_size)) {
 		if (avail_size < gphys_size) {
-			my_print("%s: available size less than required size\n", __FUNCTION__);
+			my_print(dev, "%s: available size less than required size\n", __FUNCTION__);
 			return -1;
 		}
 		if (virtio_setup_gphys_hphys_pair(dev, gphys_addr, hphys_addr, avail_size)) {
-			my_print("%s: virtio_setup_gphys_hphys_pair\n", __FUNCTION__);
+			my_print(dev, "%s: virtio_setup_gphys_hphys_pair\n", __FUNCTION__);
 			return -1;
 		}
 	}
@@ -337,6 +336,8 @@ int virtio_queue_setup(struct virtio_device *dev, struct virtio_queue *vq,
 	vq->guest_addr = gphys_addr;
 	vq->host_addr = hphys_addr;
 	vq->total_size = gphys_size;
+
+	vq->vdev = dev;
 
 	return 0;
 }
@@ -356,7 +357,7 @@ static unsigned next_desc(struct virtio_queue *vq,
 
 	rc = virtio_queue_get_desc(vq, next, desc);
 	if (rc) {
-		my_print("%s: failed to get descriptor next=%d error=%d\n",
+		my_print(vq->vdev, "%s: failed to get descriptor next=%d error=%d\n",
 			 __FUNCTION__, next, rc);
 		return max;
 	}
@@ -393,7 +394,7 @@ int virtio_queue_get_head_iovec(struct virtio_queue *vq,
 
 	rc = virtio_queue_get_desc(vq, idx, &desc);
 	if (rc) {
-		my_print("%s: failed to get descriptor idx=%d error=%d\n",
+		my_print(vq->vdev, "%s: failed to get descriptor idx=%d error=%d\n",
 			 __FUNCTION__, idx, rc);
 		goto fail;
 	}
@@ -404,7 +405,7 @@ int virtio_queue_get_head_iovec(struct virtio_queue *vq,
 		desc = guest_flat_to_host(kvm, desc[idx].addr);
 		idx = 0;
 #endif
-		my_print("%s: indirect descriptor not supported idx=%d\n",
+		my_print(vq->vdev, "%s: indirect descriptor not supported idx=%d\n",
 			 __FUNCTION__, idx);
 		rc = VIRTIO_ENOTSUPP;
 		goto fail;
@@ -473,7 +474,7 @@ uint32_t virtio_iovec_to_buf_read(struct virtio_device *dev,
 		len = ((buf_len - pos) < iov[i].len) ?
 				(buf_len - pos) : iov[i].len;
 
-		len = my_guest_physical_read(iov[i].addr, buf + pos, len);
+		len = my_guest_physical_read(dev, iov[i].addr, buf + pos, len);
 		if (!len) {
 			break;
 		}
@@ -495,7 +496,7 @@ uint32_t virtio_buf_to_iovec_write(struct virtio_device *dev,
 		len = ((buf_len - pos) < iov[i].len) ?
 					(buf_len - pos) : iov[i].len;
 
-		len = my_guest_physical_write(iov[i].addr, buf + pos, len);
+		len = my_guest_physical_write(dev, iov[i].addr, buf + pos, len);
 		if (!len) {
 			break;
 		}

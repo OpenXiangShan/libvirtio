@@ -1,7 +1,10 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include "virtio_wrapper.h"
+#include "virtio_mmio.h"
+#include "virtio.h"
 #include "utils.h"
 
 /*
@@ -19,8 +22,6 @@
  * You should have received a copy of the GNU General Public License along with
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-static struct libvirtio_ops *libvirtio_ops = NULL;
 
 int memory_region_is_overlay(unsigned long start, unsigned long end,
 				    unsigned long new_start,
@@ -138,85 +139,156 @@ u32 do_udiv32(u32 dividend, u32 divisor, u32 * remainder)
 	return quotient;
 }
 
-int libvirtio_gphys_read(uint64_t gpa, void *dst, uint32_t len)
+int libvirtio_gphys_read(struct virtio_device *dev, uint64_t gpa, void *dst, uint32_t len)
 {
-	if (!libvirtio_ops || !libvirtio_ops->guest_mem_read)
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
+
+	if (!mdev || !mdev->ops || !mdev->ops->guest_mem_read)
 		return -1;
 
-	return libvirtio_ops->guest_mem_read(gpa, dst, len);
+	return mdev->ops->guest_mem_read(gpa, dst, len);
 }
 
-int libvirtio_gphys_write(uint64_t gpa, void *src, uint32_t len)
+int libvirtio_gphys_write(struct virtio_device *dev, uint64_t gpa, void *src, uint32_t len)
 {
-	if (!libvirtio_ops || !libvirtio_ops->guest_mem_write)
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
+
+	if (!mdev || !mdev->ops || !mdev->ops->guest_mem_write)
 		return -1;
 
-	return libvirtio_ops->guest_mem_write(gpa, src, len);
+	return mdev->ops->guest_mem_write(gpa, src, len);
 }
 
-int libvirtio_gphys_map(uint64_t gphys_addr, uint64_t gphys_size,
+int libvirtio_gphys_map(struct virtio_device *dev,
+			uint64_t gphys_addr, uint64_t gphys_size,
 			uint64_t *hphys_addr, uint64_t *hphys_size)
 {
-	if (!libvirtio_ops || !libvirtio_ops->map)
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
+
+	if (!mdev || !mdev->ops || !mdev->ops->map)
 		return -1;
 
-	return libvirtio_ops->map(gphys_addr, gphys_size, hphys_addr, hphys_size);
+	return mdev->ops->map(gphys_addr, gphys_size, hphys_addr, hphys_size);
 }
 
-uint64_t libvirtio_alloc(int size)
+uint64_t libvirtio_alloc(struct virtio_device *dev, int size)
 {
-	if (!libvirtio_ops || !libvirtio_ops->mm_alloc)
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
+
+	if (!mdev || !mdev->ops || !mdev->ops->mm_alloc)
 		return 0;
 
-	return libvirtio_ops->mm_alloc(size);
+	return mdev->ops->mm_alloc(size);
 }
 
-void libvirtio_free(uint64_t addr, int size)
+uint64_t libvirtio_zalloc(struct virtio_device *dev, int size)
 {
-	if (!libvirtio_ops || !libvirtio_ops->mm_free)
+	uint64_t addr;
+
+	addr = libvirtio_alloc(dev, size);
+	if (!addr)
+		return 0;
+
+	memset((void *)addr, 0, size);
+
+	return addr;
+}
+
+void libvirtio_free(struct virtio_device *dev, uint64_t addr, int size)
+{
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
+
+	if (!mdev || !mdev->ops || !mdev->ops->mm_free)
 		return;
 
-	libvirtio_ops->mm_free(addr, size);
+	mdev->ops->mm_free(addr, size);
 }
 
-void libvirtio_print(const char *fmt, ...)
+void libvirtio_print(struct virtio_device *dev, const char *fmt, ...)
 {
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
 	va_list ap;
 
-	if (!libvirtio_ops || !libvirtio_ops->vprint)
+	if (!mdev || !mdev->ops || !mdev->ops->vprint)
 		return;
 
 	va_start(ap, fmt);
-	libvirtio_ops->vprint(fmt, ap);
+	mdev->ops->vprint(fmt, ap);
 	va_end(ap);
 }
 
-int libvirtio_get_blk_capacity(void *priv)
+int libvirtio_get_blk_capacity(struct virtio_device *dev)
 {
-	if (!libvirtio_ops || !libvirtio_ops->blk_ops.get_blk_capacity)
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
+
+	if (!mdev || !mdev->ops || !mdev->ops->blk_ops.get_blk_capacity)
 		return -1;
 
-	return libvirtio_ops->blk_ops.get_blk_capacity(priv);
+	return mdev->ops->blk_ops.get_blk_capacity(mdev->priv);
 }
 
-int libvirtio_submit_blk_io(uint64_t sector, void *buf, int len,
-			    uint8_t flags, void *priv)
+int libvirtio_submit_blk_io(struct virtio_device *dev,
+			    uint64_t sector, void *buf,
+			    int len, uint8_t flags)
 {
-	if (!libvirtio_ops || !libvirtio_ops->blk_ops.submit_blk_io)
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
+
+	if (!mdev || !mdev->ops || !mdev->ops->blk_ops.submit_blk_io)
 		return -1;
 
-	return libvirtio_ops->blk_ops.submit_blk_io(sector, buf, len, flags, priv);
+	return mdev->ops->blk_ops.submit_blk_io(sector, buf, len, flags, mdev->priv);
 }
 
-int libvirtio_set_irq(void *priv)
+int libvirtio_net_read_tap(struct virtio_device *dev,
+			   uint64_t offset, void *buf, int len)
 {
-	if (!libvirtio_ops || !libvirtio_ops->set_irq)
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
+
+	if (!mdev || !mdev->ops || !mdev->ops->net_ops.read_tap)
 		return -1;
 
-	return libvirtio_ops->set_irq(priv);
+	return mdev->ops->net_ops.read_tap(offset, buf, len, mdev->priv);
 }
 
-void libvirtio_set_ops(struct libvirtio_ops *ops)
+int libvirtio_net_write_tap(struct virtio_device *dev,
+			    uint64_t offset, void *buf, int len)
 {
-	libvirtio_ops = ops;
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
+
+	if (!mdev || !mdev->ops || !mdev->ops->net_ops.write_tap)
+		return -1;
+
+	return mdev->ops->net_ops.write_tap(offset, buf, len, mdev->priv);
+}
+
+int libvirtio_net_ctrl_mq(struct virtio_device *dev, int vq_pairs)
+{
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
+
+	if (!mdev || !mdev->ops || !mdev->ops->net_ops.ctrl_mq)
+		return -1;
+
+	return mdev->ops->net_ops.ctrl_mq(vq_pairs, mdev->priv);
+}
+
+int libvirtio_net_set_mac(struct virtio_device *dev, uint8_t *mac)
+{
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
+
+	if (!mdev || !mdev->ops || !mdev->ops->net_ops.set_mac)
+		return -1;
+
+	mdev->ops->net_ops.set_mac(mac, mdev->priv);
+
+	return 0;
+}
+
+int libvirtio_set_irq(struct virtio_device *dev)
+{
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
+
+	if (!mdev || !mdev->ops || !mdev->ops->set_irq)
+		return -1;
+
+	return mdev->ops->set_irq(mdev->priv);
 }

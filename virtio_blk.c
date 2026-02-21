@@ -93,12 +93,13 @@ static void virtio_blk_req_complete(struct virtio_device *dev,
 	}
 
 	if (req->read_iov) {
-		my_free((uint64_t)req->read_iov, req->read_iov_cnt * sizeof(struct virtio_iovec));
+		my_free(dev, (uint64_t)req->read_iov,
+			req->read_iov_cnt * sizeof(struct virtio_iovec));
 		req->read_iov = NULL;
 		req->read_iov_cnt = 0;
 	}
 	if (req->data) {
-		my_free((uint64_t)req->data, req->len);
+		my_free(dev, (uint64_t)req->data, req->len);
 		req->data = NULL;
 	}
 
@@ -107,7 +108,7 @@ static void virtio_blk_req_complete(struct virtio_device *dev,
 	virtio_queue_set_used_elem(req->vq, req->head, req->len);
 
 	if (virtio_queue_should_signal(req->vq)) {
-		//my_print("####### %s need signal!!!\n", __FUNCTION__);
+		//my_print(dev, "####### %s need signal!!!\n", __FUNCTION__);
 		if (dev->vn && dev->vn->notify)
 			dev->vn->notify(dev, queueid);
 	}
@@ -122,7 +123,6 @@ static void virtio_blk_do_io(struct virtio_device *dev,
 	struct virtio_blk_dev_req *req;
 	struct virtio_queue *vq = &vbdev->vqs[VIRTIO_BLK_IO_QUEUE];
 	struct virtio_blk_outhdr hdr;
-	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
 
 	while (virtio_queue_available(vq)) {
 		thead = virtio_queue_pop(vq);
@@ -130,7 +130,7 @@ static void virtio_blk_do_io(struct virtio_device *dev,
 		rc = virtio_queue_get_head_iovec(vq, thead, vbdev->iov,
 						 &iov_cnt, &len, &head);
 		if (rc) {
-			my_print("%s: failed to get iovec (error %d)\n",
+			my_print(dev, "%s: failed to get iovec (error %d)\n",
 				 __FUNCTION__, rc);
 			continue;
 		}
@@ -155,16 +155,16 @@ static void virtio_blk_do_io(struct virtio_device *dev,
 
 		switch (hdr.type) {
 		case VMM_VIRTIO_BLK_T_IN:
-			//my_print("######## %s VMM_VIRTIO_BLK_T_IN\n", __FUNCTION__);
-			req->data = (void *)my_alloc(req->len);
+			//my_print(dev, "######## %s VMM_VIRTIO_BLK_T_IN\n", __FUNCTION__);
+			req->data = (void *)my_alloc(dev, req->len);
 			if (!req->data) {
-				my_print("%s: %s malloc failed, len:%d\n", __FUNCTION__, VMM_VIRTIO_BLK_T_IN, req->len);
+				my_print(dev, "%s: %s malloc failed, len:%d\n", __FUNCTION__, VMM_VIRTIO_BLK_T_IN, req->len);
 				continue;
 			}
 			len = sizeof(struct virtio_iovec) * (iov_cnt - 2);
-			req->read_iov = (struct virtio_iovec *)my_alloc(len);
+			req->read_iov = (struct virtio_iovec *)my_alloc(dev, len);
 			if (!req->read_iov) {
-				my_print("%s: %s malloc failed, len:%d\n", __FUNCTION__, VMM_VIRTIO_BLK_T_IN, req->len);
+				my_print(dev, "%s: %s malloc failed, len:%d\n", __FUNCTION__, VMM_VIRTIO_BLK_T_IN, req->len);
 				continue;
 			}
 			req->read_iov_cnt = iov_cnt - 2;
@@ -172,45 +172,45 @@ static void virtio_blk_do_io(struct virtio_device *dev,
 				req->read_iov[i].addr = vbdev->iov[i + 1].addr;
 				req->read_iov[i].len = vbdev->iov[i + 1].len;
 			}
-			//my_print("%s: VIRTIO_BLK_T_IN dev=%s "
+			//my_print(dev, "%s: VIRTIO_BLK_T_IN dev=%s "
 			//	 "hdr.sector=0x%lx req->len=%d\n",
 			//	 __FUNCTION__, dev->name,
 			//	 (u64)hdr.sector, req->len);
-			if (my_submit_blk_request(hdr.sector, req->data, req->len, MY_BLK_REQ_READ, mdev->priv)) {
-				my_print("%s: submit_blk_request failed\n", __FUNCTION__);
+			if (my_submit_blk_request(dev, hdr.sector, req->data, req->len, MY_BLK_REQ_READ)) {
+				my_print(dev, "%s: submit_blk_request failed\n", __FUNCTION__);
 				continue;
 			}
 			virtio_blk_req_complete(dev, vbdev, req, MY_BLK_REQ_READ, VMM_VIRTIO_BLK_S_OK);
 
 			break;
 		case VMM_VIRTIO_BLK_T_OUT:
-			//my_print("######## %s VMM_VIRTIO_BLK_T_OUT\n", __FUNCTION__);
-			req->data = (void *)my_alloc(req->len);
+			//my_print(dev, "######## %s VMM_VIRTIO_BLK_T_OUT\n", __FUNCTION__);
+			req->data = (void *)my_alloc(dev, req->len);
 			if (!req->data) {
-				my_print("%s: %s malloc failed, len:%d\n", __FUNCTION__, VMM_VIRTIO_BLK_T_IN, req->len);
+				my_print(dev, "%s: %s malloc failed, len:%d\n", __FUNCTION__, VMM_VIRTIO_BLK_T_IN, req->len);
 				continue;
 			}
 			virtio_iovec_to_buf_read(dev, &vbdev->iov[1], iov_cnt - 2, req->data, req->len);
-			//my_print("%s: VIRTIO_BLK_T_OUT dev=%s "
+			//my_print(dev, "%s: VIRTIO_BLK_T_OUT dev=%s "
 			//	 "hdr.sector=0x%lx req->len=%d\n",
 			//	 __FUNCTION__, dev->name,
 			//	 (u64)hdr.sector, req->len);
-			if (my_submit_blk_request(hdr.sector, req->data, req->len, MY_BLK_REQ_WRITE, mdev->priv)) {
-				my_print("%s: submit_blk_request failed\n", __FUNCTION__);
+			if (my_submit_blk_request(dev, hdr.sector, req->data, req->len, MY_BLK_REQ_WRITE)) {
+				my_print(dev, "%s: submit_blk_request failed\n", __FUNCTION__);
 				continue;
 			}
 			virtio_blk_req_complete(dev, vbdev, req, MY_BLK_REQ_WRITE, VMM_VIRTIO_BLK_S_OK);
 
 			break;
 		case VMM_VIRTIO_BLK_T_FLUSH:
-			//my_print("######## %s VMM_VIRTIO_BLK_T_FLUSH\n", __FUNCTION__);
+			//my_print(dev, "######## %s VMM_VIRTIO_BLK_T_FLUSH\n", __FUNCTION__);
 			virtio_blk_req_complete(dev, vbdev, req, MY_BLK_REQ_FLUSH, VMM_VIRTIO_BLK_S_OK);
 			break;
 		case VMM_VIRTIO_BLK_T_GET_ID:
-			//my_print("######## %s VMM_VIRTIO_BLK_T_GET_ID\n", __FUNCTION__);
+			//my_print(dev, "######## %s VMM_VIRTIO_BLK_T_GET_ID\n", __FUNCTION__);
 			break;
 		default:
-			my_print("%s: unhandled hdr.type=%d\n",
+			my_print(dev, "%s: unhandled hdr.type=%d\n",
 				 __FUNCTION__, hdr.type);
 			break;
 		}
@@ -233,7 +233,7 @@ static void virtio_blk_set_guest_features(struct virtio_device *dev,
 {
 	struct virtio_blk_dev *vbdev = dev->emu_data;
 
-	//my_print("%s select:0x%x features:0x%x\n", __FUNCTION__, select, features);
+	//my_print(dev, "%s select:0x%x features:0x%x\n", __FUNCTION__, select, features);
 
 	if (1 < select)
 		return;
@@ -249,7 +249,7 @@ static int virtio_blk_init_vq(struct virtio_device *dev,
 	int ret;
 	struct virtio_blk_dev *vbdev = dev->emu_data;
 
-	//my_print("%s vq:0x%x page_size:0x%x align:0x%x pfn:0x%x\n", __FUNCTION__, vq, page_size, align, pfn);
+	//my_print(dev, "%s vq:0x%x page_size:0x%x align:0x%x pfn:0x%x\n", __FUNCTION__, vq, page_size, align, pfn);
 
 	switch (vq) {
 	case VIRTIO_BLK_IO_QUEUE:
@@ -269,7 +269,7 @@ static int virtio_blk_get_pfn_vq(struct virtio_device *dev, uint32_t vq)
 	int ret = 0;
 	struct virtio_blk_dev *vbdev = dev->emu_data;
 
-	//my_print("%s vq:0x%x\n", __FUNCTION__, vq);
+	//my_print(dev, "%s vq:0x%x\n", __FUNCTION__, vq);
 
 	switch (vq) {
 	case VIRTIO_BLK_IO_QUEUE:
@@ -286,7 +286,7 @@ static int virtio_blk_get_size_vq(struct virtio_device *dev, uint32_t vq)
 {
 	int ret;
 
-	//my_print("%s vq:0x%x\n", __FUNCTION__, vq);
+	//my_print(dev, "%s vq:0x%x\n", __FUNCTION__, vq);
 
 	switch (vq) {
 	case VIRTIO_BLK_IO_QUEUE:
@@ -303,7 +303,7 @@ static int virtio_blk_get_size_vq(struct virtio_device *dev, uint32_t vq)
 static int virtio_blk_set_size_vq(struct virtio_device *dev,
 				  uint32_t vq, int size)
 {
-	//my_print("%s vq:0x%x size:0x%x warning !!!\n", __FUNCTION__, vq, size);
+	//my_print(dev, "%s vq:0x%x size:0x%x warning !!!\n", __FUNCTION__, vq, size);
 	return size;
 }
 
@@ -312,7 +312,7 @@ static int virtio_blk_notify_vq(struct virtio_device *dev, uint32_t vq)
 	int ret = 0;
 	struct virtio_blk_dev *vbdev = dev->emu_data;
 
-	//my_print("%s vq:0x%x\n", __FUNCTION__, vq);
+	//my_print(dev, "%s vq:0x%x\n", __FUNCTION__, vq);
 
 	switch (vq) {
 	case VIRTIO_BLK_IO_QUEUE:
@@ -329,12 +329,12 @@ static int virtio_blk_notify_vq(struct virtio_device *dev, uint32_t vq)
 static void virtio_blk_status_changed(struct virtio_device *dev,
 				      uint32_t new_status)
 {
-	//my_print("%s new_status:0x%x\n", __FUNCTION__, new_status);
+	//my_print(dev, "%s new_status:0x%x\n", __FUNCTION__, new_status);
 }
 
 static int virtio_blk_reset(struct virtio_device *dev)
 {
-	//my_print("%s\n", __FUNCTION__);
+	//my_print(dev, "%s\n", __FUNCTION__);
 	return 0;
 }
 
@@ -345,7 +345,7 @@ static int virtio_blk_write_config(struct virtio_device *dev,
 	struct virtio_blk_dev *vbdev = dev->emu_data;
 	uint8_t *dst = (uint8_t *)&vbdev->config;
 
-	//my_print("%s: dev=%s offset=%d src=%p src_len=%d\n",
+	//my_print(dev, "%s: dev=%s offset=%d src=%p src_len=%d\n",
 	//	 __FUNCTION__, dev->name, offset, src, src_len);
 
 	for (i = 0; (i < src_len) && ((offset + i) < sizeof(vbdev->config)); i++) {
@@ -362,7 +362,7 @@ static int virtio_blk_read_config(struct virtio_device *dev,
 	struct virtio_blk_dev *vbdev = dev->emu_data;
 	uint8_t *src = (uint8_t *)&vbdev->config;
 
-	//my_print("%s: dev=%s offset=%d dst=%p dst_len=%d\n",
+	//my_print(dev, "%s: dev=%s offset=%d dst=%p dst_len=%d\n",
 	//	 __FUNCTION__, dev->name, offset, dst, dst_len);
 
 	for (i = 0; (i < dst_len) && ((offset + i) < sizeof(vbdev->config)); i++) {
@@ -376,16 +376,15 @@ static int virtio_blk_connect(struct virtio_device *dev,
 			      struct virtio_emulator *emu)
 {
 	struct virtio_blk_dev *vbdev;
-	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
 
-	vbdev = (struct virtio_blk_dev *)my_alloc(sizeof(struct virtio_blk_dev));
+	vbdev = (struct virtio_blk_dev *)my_alloc(dev, sizeof(struct virtio_blk_dev));
 	if (!vbdev)
 		return -1;
 	memset(vbdev, 0, sizeof(*vbdev));
 
 	vbdev->vdev = dev;
 
-	vbdev->config.capacity = my_get_blk_capacity(mdev->priv);
+	vbdev->config.capacity = my_get_blk_capacity(dev);
 	if (vbdev->config.capacity == -1)
 		vbdev->config.capacity = 1 * 1024 * 1024 * 1024 / VIRTIO_BLK_SECTOR_SIZE;
 	vbdev->config.seg_max = VIRTIO_BLK_DISK_SEG_MAX,
