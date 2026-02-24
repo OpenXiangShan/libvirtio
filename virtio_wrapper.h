@@ -5,8 +5,9 @@
 #include <stdint.h>
 #include <stdarg.h>
 
-#define VIRTIO_EMU_NAME_BLK "virtio_blk"
-#define VIRTIO_EMU_NAME_NET "virtio_net"
+#define VIRTIO_EMU_NAME_BLK     "virtio_blk"
+#define VIRTIO_EMU_NAME_NET     "virtio_net"
+#define VIRTIO_EMU_NAME_CONSOLE "virtio_console"
 
 enum {
 	MY_BLK_REQ_READ = 0,
@@ -26,6 +27,10 @@ struct libvirtio_net_ops {
 	int  (*write_tap)(uint64_t offset, void *buf, int len, void *priv);
 };
 
+struct libvirtio_console_ops {
+	int (*send)(void *buf, int len, void *priv);
+};
+
 struct libvirtio_ops {
 	int      (*vprint)(const char *fmt, va_list ap) __attribute__((format(printf, 1, 0)));
 	uint64_t (*mm_alloc)(int size);
@@ -39,6 +44,7 @@ struct libvirtio_ops {
 
 	struct   libvirtio_blk_ops blk_ops;
 	struct   libvirtio_net_ops net_ops;
+	struct   libvirtio_console_ops console_ops;
 };
 
 struct libvirtio_callback {

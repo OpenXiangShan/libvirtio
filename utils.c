@@ -283,6 +283,16 @@ int libvirtio_net_set_mac(struct virtio_device *dev, uint8_t *mac)
 	return 0;
 }
 
+int libvirtio_console_send(struct virtio_device *dev, void *buf, int len)
+{
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
+
+	if (!mdev || !mdev->ops || !mdev->ops->console_ops.send)
+		return -1;
+
+	return mdev->ops->console_ops.send(buf, len, mdev->priv);
+}
+
 int libvirtio_set_irq(struct virtio_device *dev)
 {
 	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);

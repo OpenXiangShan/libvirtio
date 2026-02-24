@@ -5,6 +5,7 @@
 #include "virtio_mmio.h"
 #include "virtio_blk.h"
 #include "virtio_net.h"
+#include "virtio_console.h"
 
 /*
  * Copyright (c) 2026 Beijing Institute of Open Source Chip (BOSC)
@@ -28,8 +29,9 @@ struct virtio_mmio_dev_info {
 };
 
 static struct virtio_mmio_dev_info virtio_dev_info[] = {
-	{ VIRTIO_EMU_NAME_BLK, virtio_blk_emulator_create },
-	{ VIRTIO_EMU_NAME_NET, virtio_net_emulator_create },
+	{ VIRTIO_EMU_NAME_BLK,     virtio_blk_emulator_create },
+	{ VIRTIO_EMU_NAME_NET,     virtio_net_emulator_create },
+	{ VIRTIO_EMU_NAME_CONSOLE, virtio_console_emulator_create },
 };
 #define VIRTIO_DEV_INFO_CNT (sizeof(virtio_dev_info) / sizeof(virtio_dev_info[0]))
 
