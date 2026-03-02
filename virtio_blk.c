@@ -7,6 +7,7 @@
 #include "virtio_ids.h"
 #include "virtio_ring.h"
 #include "utils.h"
+#include "fifo.h"
 
 /**
  * Copyright (c) 2013 Anup Patel.
@@ -73,7 +74,8 @@ struct virtio_blk_dev {
 	uint64_t			features;
 
 	struct virtio_blk_config 	config;
-	//struct vdisk			*vdisk;
+
+	struct fifo *req_process;
 };
 
 static void virtio_blk_req_complete(struct virtio_device *dev,
@@ -114,9 +116,17 @@ static void virtio_blk_req_complete(struct virtio_device *dev,
 	}
 }
 
-static void virtio_blk_do_io(struct virtio_device *dev,
-			     struct virtio_blk_dev *vbdev)
+static bool virtio_blk_can_process_req(void *data)
 {
+	struct virtio_blk_dev *vbdev = (struct virtio_blk_dev *)data;
+
+	return !fifo_isempty(vbdev->req_process);
+}
+
+static void virtio_blk_req_process(void *data)
+{
+	struct virtio_blk_dev *vbdev = (struct virtio_blk_dev *)data;
+	struct virtio_device *dev;
 	int rc;
 	uint16_t head, thead;
 	uint32_t i, iov_cnt, len;
@@ -124,8 +134,12 @@ static void virtio_blk_do_io(struct virtio_device *dev,
 	struct virtio_queue *vq = &vbdev->vqs[VIRTIO_BLK_IO_QUEUE];
 	struct virtio_blk_outhdr hdr;
 
-	while (virtio_queue_available(vq)) {
-		thead = virtio_queue_pop(vq);
+	if (!vbdev)
+		return;
+
+	dev = vbdev->vdev;
+
+	while (fifo_dequeue(vbdev->req_process, &thead)) {
 		req = &vbdev->reqs[thead];
 		rc = virtio_queue_get_head_iovec(vq, thead, vbdev->iov,
 						 &iov_cnt, &len, &head);
@@ -135,6 +149,7 @@ static void virtio_blk_do_io(struct virtio_device *dev,
 			continue;
 		}
 
+		my_print(dev, "iov_cnt:%d thead:%d\n", iov_cnt, thead);
 		req->vq = vq;
 		req->head = head;
 		req->read_iov = NULL;
@@ -214,6 +229,18 @@ static void virtio_blk_do_io(struct virtio_device *dev,
 				 __FUNCTION__, hdr.type);
 			break;
 		}
+	}
+}
+
+static void virtio_blk_do_io(struct virtio_device *dev,
+			     struct virtio_blk_dev *vbdev)
+{
+	uint16_t thead;
+	struct virtio_queue *vq = &vbdev->vqs[VIRTIO_BLK_IO_QUEUE];
+
+	while (virtio_queue_available(vq)) {
+		thead = virtio_queue_pop(vq);
+		fifo_enqueue(vbdev->req_process, &thead, true);
 	}
 }
 
@@ -376,6 +403,7 @@ static int virtio_blk_connect(struct virtio_device *dev,
 			      struct virtio_emulator *emu)
 {
 	struct virtio_blk_dev *vbdev;
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
 
 	vbdev = (struct virtio_blk_dev *)my_alloc(dev, sizeof(struct virtio_blk_dev));
 	if (!vbdev)
@@ -390,7 +418,18 @@ static int virtio_blk_connect(struct virtio_device *dev,
 	vbdev->config.seg_max = VIRTIO_BLK_DISK_SEG_MAX,
 	vbdev->config.blk_size = VIRTIO_BLK_SECTOR_SIZE;
 
+	vbdev->req_process = fifo_alloc(dev, sizeof(uint16_t), VIRTIO_BLK_QUEUE_SIZE);
+	if (!vbdev->req_process) {
+		my_print(dev, "%s -- fifo alloc failed\n", __FUNCTION__);
+		my_free(dev, (uint64_t)vbdev, sizeof(struct virtio_blk_dev));
+		return -1;
+	}
+
 	dev->emu_data = vbdev;
+
+	mdev->cb.process_req = virtio_blk_req_process;
+	mdev->cb.can_process_req = virtio_blk_can_process_req;
+	mdev->cb.data = vbdev;
 
 	return 0;
 }

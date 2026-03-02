@@ -51,6 +51,9 @@ struct libvirtio_callback {
 	void *data;
 
 	int  (*receive)(void *buf, int len, void *data);
+
+	void (*process_req)(void *data);
+	bool (*can_process_req)(void *data);
 };
 
 struct libvirtio_callback *libvirtio_get_callback(uint64_t addr);
