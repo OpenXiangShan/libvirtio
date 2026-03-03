@@ -57,7 +57,7 @@ int virtio_mmio_read(uint64_t addr, uint32_t *val, int len)
 	return virtio_dev_mmio_read(dev, (uint32_t)(addr - dev->start), val, len);
 }
 
-int virtio_mmio_write(uint64_t addr, uint32_t val, int len)
+int virtio_mmio_write(uint64_t addr, uint32_t val, int len, int *is_doorbell)
 {
 	struct virtio_mmio_dev *dev;
 
@@ -65,7 +65,7 @@ int virtio_mmio_write(uint64_t addr, uint32_t val, int len)
 	if (!dev)
 		return -1;
 
-	return virtio_dev_mmio_write(dev, (uint32_t)(addr - dev->start), val, len);
+	return virtio_dev_mmio_write(dev, (uint32_t)(addr - dev->start), val, len, is_doorbell);
 }
 
 int virtio_mmio_create(const char *name, uint64_t start, int len,

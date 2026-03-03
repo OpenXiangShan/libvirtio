@@ -53,12 +53,11 @@ struct libvirtio_callback {
 	int  (*receive)(void *buf, int len, void *data);
 
 	void (*process_req)(void *data);
-	bool (*can_process_req)(void *data);
 };
 
 struct libvirtio_callback *libvirtio_get_callback(uint64_t addr);
 int virtio_mmio_read(uint64_t addr, uint32_t *val, int len);
-int virtio_mmio_write(uint64_t addr, uint32_t val, int len);
+int virtio_mmio_write(uint64_t addr, uint32_t val, int len, int *is_doorbell);
 int virtio_mmio_create(const char *name, uint64_t start, int len,
 		       struct libvirtio_ops *ops, void *priv);
 

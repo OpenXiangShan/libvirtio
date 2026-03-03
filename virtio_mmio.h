@@ -169,8 +169,9 @@ struct virtio_mmio_dev {
 
 int virtio_dev_mmio_read(struct virtio_mmio_dev *dev,
 			 uint32_t offset, uint32_t *val, uint32_t len);
-int virtio_dev_mmio_write(struct virtio_mmio_dev *dev,
-			  uint32_t offset, uint32_t val, uint32_t len);
+int virtio_dev_mmio_write(struct virtio_mmio_dev *mdev,
+			  uint32_t offset, uint32_t val,
+			  uint32_t len, int *is_doorbell);
 struct virtio_mmio_dev *virtio_mmio_dev_get(uint64_t start, int len);
 void virtio_mmio_dev_connect(const char *name, struct virtio_mmio_dev *mmio_dev,
 			     struct virtio_emulator *emu);

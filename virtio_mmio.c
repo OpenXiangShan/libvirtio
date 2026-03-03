@@ -108,7 +108,8 @@ static int virtio_mmio_config_read(struct virtio_mmio_dev *mdev,
 }
 
 static int virtio_mmio_config_write(struct virtio_mmio_dev *mdev,
-				    uint32_t offset, void *src, uint32_t src_len)
+				    uint32_t offset, void *src,
+				    uint32_t src_len, int *is_doorbell)
 {
 	int ret = 0;
 	u32 val = *(u32 *)(src);
@@ -153,7 +154,8 @@ static int virtio_mmio_config_write(struct virtio_mmio_dev *mdev,
 				    val);
 		break;
 	case VMM_VIRTIO_MMIO_QUEUE_NOTIFY:
-		mdev->dev.emu->notify_vq(&mdev->dev, val);
+		if (!mdev->dev.emu->notify_vq(&mdev->dev, val))
+			*is_doorbell = 1;
 		break;
 	case VMM_VIRTIO_MMIO_INTERRUPT_ACK:
 		mdev->config.interrupt_state &= ~val;
@@ -198,7 +200,8 @@ static int virtio_config_write(struct virtio_mmio_dev *mdev,
 }
 
 int virtio_dev_mmio_write(struct virtio_mmio_dev *mdev,
-			  uint32_t offset, uint32_t val, uint32_t len)
+			  uint32_t offset, uint32_t val,
+			  uint32_t len, int *is_doorbell)
 {
 //	my_print(&mdev->dev, "%s offset:0x%x val:0x%x len:%d\n", __FUNCTION__, offset, val, len);
 
@@ -208,7 +211,7 @@ int virtio_dev_mmio_write(struct virtio_mmio_dev *mdev,
 		return virtio_config_write(mdev, offset, &val, len);
 	}
 
-	return virtio_mmio_config_write(mdev, offset, &val, len);
+	return virtio_mmio_config_write(mdev, offset, &val, len, is_doorbell);
 }
 
 int virtio_dev_mmio_read(struct virtio_mmio_dev *mdev,
