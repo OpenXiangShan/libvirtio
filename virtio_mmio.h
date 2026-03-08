@@ -156,6 +156,12 @@ struct virtio_mmio_config {
 	u32     status;
 } __attribute__((packed));
 
+struct libvirtio_callback {
+	void *data;
+	int  (*receive)(void *buf, int len, void *data);
+	void (*process_req)(void *data);
+};
+
 struct virtio_mmio_dev {
 	struct list_head list;
 	struct virtio_device dev;
@@ -167,12 +173,12 @@ struct virtio_mmio_dev {
 	void *priv;
 };
 
+void virtio_mmio_dev_show_all(void);
 int virtio_dev_mmio_read(struct virtio_mmio_dev *dev,
 			 uint32_t offset, uint32_t *val, uint32_t len);
 int virtio_dev_mmio_write(struct virtio_mmio_dev *mdev,
 			  uint32_t offset, uint32_t val,
 			  uint32_t len, int *is_doorbell);
-struct virtio_mmio_dev *virtio_mmio_dev_get(uint64_t start, int len);
 void virtio_mmio_dev_connect(const char *name, struct virtio_mmio_dev *mmio_dev,
 			     struct virtio_emulator *emu);
 struct virtio_mmio_dev *virtio_dev_mmio_create(uint64_t start, uint64_t end,

@@ -35,41 +35,57 @@ static struct virtio_mmio_dev_info virtio_dev_info[] = {
 };
 #define VIRTIO_DEV_INFO_CNT (sizeof(virtio_dev_info) / sizeof(virtio_dev_info[0]))
 
-struct libvirtio_callback *libvirtio_get_callback(uint64_t addr)
+void virtio_process_req(virtio_handle_t handle)
 {
-	struct virtio_mmio_dev *mdev;
+	struct virtio_mmio_dev *dev = handle;
+	struct libvirtio_callback *cb = &dev->cb;
 
-	mdev = virtio_mmio_dev_get(addr, 1);
-	if (!mdev)
-		return NULL;
+	if (!dev || !cb || !cb->process_req)
+		return;
 
-	return &mdev->cb;
+	cb->process_req(cb->data);
 }
 
-int virtio_mmio_read(uint64_t addr, uint32_t *val, int len)
+int virtio_receive(virtio_handle_t handle, void *buf, int len)
 {
-	struct virtio_mmio_dev *dev;
+	struct virtio_mmio_dev *dev = handle;
+	struct libvirtio_callback *cb = &dev->cb;
 
-	dev = virtio_mmio_dev_get(addr, len);
+	if (!dev || !cb || !cb->receive)
+		return -1;
+
+	return cb->receive(buf, len, cb->data);
+}
+
+int virtio_mmio_read(virtio_handle_t handle, uint64_t addr,
+		     uint32_t *val, int len)
+{
+	struct virtio_mmio_dev *dev = handle;
+
 	if (!dev)
 		return -1;
 
 	return virtio_dev_mmio_read(dev, (uint32_t)(addr - dev->start), val, len);
 }
 
-int virtio_mmio_write(uint64_t addr, uint32_t val, int len, int *is_doorbell)
+int virtio_mmio_write(virtio_handle_t handle, uint64_t addr, uint32_t val,
+		      int len, int *is_doorbell)
 {
-	struct virtio_mmio_dev *dev;
+	struct virtio_mmio_dev *dev = handle;
 
-	dev = virtio_mmio_dev_get(addr, len);
 	if (!dev)
 		return -1;
 
 	return virtio_dev_mmio_write(dev, (uint32_t)(addr - dev->start), val, len, is_doorbell);
 }
 
-int virtio_mmio_create(const char *name, uint64_t start, int len,
-		       struct libvirtio_ops *ops, void *priv)
+void virtio_mmio_show_all(void)
+{
+	virtio_mmio_dev_show_all();
+}
+
+virtio_handle_t virtio_mmio_create(const char *name, uint64_t start, int len,
+				   struct libvirtio_ops *ops, void *priv)
 {
 	struct virtio_mmio_dev *dev;
 	struct virtio_emulator *emu = NULL;
@@ -77,7 +93,7 @@ int virtio_mmio_create(const char *name, uint64_t start, int len,
 
 	dev = virtio_dev_mmio_create(start, start + len, ops);
 	if (!dev)
-		return -1;
+		return NULL;
 
 	dev->priv = priv;
 
@@ -86,9 +102,9 @@ int virtio_mmio_create(const char *name, uint64_t start, int len,
 			emu = virtio_dev_info[i].create();
 	}
 	if (!emu)
-		return -1;
+		return NULL;
 
 	virtio_mmio_dev_connect(name, dev, emu);
 
-	return 0;
+	return dev;
 }

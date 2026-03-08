@@ -224,9 +224,9 @@ static uint64_t virtio_blk_get_host_features(struct virtio_device *dev)
 {
 	return	1UL << VMM_VIRTIO_BLK_F_SEG_MAX
 		| 1UL << VMM_VIRTIO_BLK_F_BLK_SIZE
-		| 1UL << VMM_VIRTIO_BLK_F_FLUSH;
-#if 0
+		| 1UL << VMM_VIRTIO_BLK_F_FLUSH
 		| 1UL << VMM_VIRTIO_RING_F_EVENT_IDX;
+#if 0
 		| 1UL << VMM_VIRTIO_RING_F_INDIRECT_DESC;
 #endif
 }

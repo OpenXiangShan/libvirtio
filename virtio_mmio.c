@@ -228,19 +228,6 @@ int virtio_dev_mmio_read(struct virtio_mmio_dev *mdev,
 	return virtio_mmio_config_read(mdev, offset, val, len);
 }
 
-struct virtio_mmio_dev *virtio_mmio_dev_get(uint64_t start, int len)
-{
-	struct virtio_mmio_dev *dev;
-
-	list_for_each_entry(dev, &virtio_mmio_dev_list, list) {
-		if (start >= dev->start && (start + len < dev->end))
-			return dev;
-	}
-
-	return NULL;
-}
-
-
 void virtio_mmio_dev_connect(const char *name, struct virtio_mmio_dev *mdev,
 			     struct virtio_emulator *emu)
 {
@@ -255,6 +242,27 @@ static struct virtio_notify mmio_notify = {
 	.name = "virtio_mmio",
 	.notify = virtio_mmio_dev_notify,
 };
+
+void virtio_mmio_dev_show_all(void)
+{
+	struct virtio_mmio_dev *mdev;
+	int idx = 0;
+
+	list_for_each_entry(mdev, &virtio_mmio_dev_list, list) {
+		struct virtio_device *dev = &mdev->dev;
+		struct virtio_mmio_config *config = &mdev->config;
+
+		my_print(dev, "####### virtio_%d #######\n", idx++);
+		my_print(dev, "%s [0x%lx - 0x%lx]\n", dev->name, mdev->start, mdev->end);
+		my_print(dev, "config:\n");
+		my_print(dev, "       magic: \"%c\" \"%c\" \"%c\" \"%c\"\n",
+			 config->magic[0], config->magic[1], config->magic[2], config->magic[3]);
+		my_print(dev, "       version: %d\n", config->version);
+		my_print(dev, "       device_id: 0x%x\n", config->device_id);
+		my_print(dev, "       vendor_id: 0x%x\n", config->vendor_id);
+		my_print(dev, "\n");
+	}
+}
 
 struct virtio_mmio_dev *virtio_dev_mmio_create(uint64_t start, uint64_t end,
 					       struct libvirtio_ops *ops)

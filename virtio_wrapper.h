@@ -9,6 +9,8 @@
 #define VIRTIO_EMU_NAME_NET     "virtio_net"
 #define VIRTIO_EMU_NAME_CONSOLE "virtio_console"
 
+typedef void *virtio_handle_t;
+
 enum {
 	MY_BLK_REQ_READ = 0,
 	MY_BLK_REQ_WRITE,
@@ -47,18 +49,16 @@ struct libvirtio_ops {
 	struct   libvirtio_console_ops console_ops;
 };
 
-struct libvirtio_callback {
-	void *data;
+int virtio_receive(virtio_handle_t handle, void *buf, int len);
 
-	int  (*receive)(void *buf, int len, void *data);
+void virtio_process_req(virtio_handle_t handle);
 
-	void (*process_req)(void *data);
-};
-
-struct libvirtio_callback *libvirtio_get_callback(uint64_t addr);
-int virtio_mmio_read(uint64_t addr, uint32_t *val, int len);
-int virtio_mmio_write(uint64_t addr, uint32_t val, int len, int *is_doorbell);
-int virtio_mmio_create(const char *name, uint64_t start, int len,
-		       struct libvirtio_ops *ops, void *priv);
+void virtio_mmio_show_all(void);
+int virtio_mmio_read(virtio_handle_t handle, uint64_t addr,
+		     uint32_t *val, int len);
+int virtio_mmio_write(virtio_handle_t handle, uint64_t addr, uint32_t val,
+		      int len, int *is_doorbell);
+virtio_handle_t virtio_mmio_create(const char *name, uint64_t start, int len,
+				   struct libvirtio_ops *ops, void *priv);
 
 #endif
