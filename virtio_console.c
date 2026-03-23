@@ -181,6 +181,35 @@ static int virtio_console_do_tx(struct virtio_device *dev,
 
 static int virtio_console_receive(void *buf, int len, void *priv)
 {
+	int rc;
+	uint16_t head = 0;
+	uint32_t iov_cnt = 0, total_len = 0;
+	struct virtio_console_dev *cdev = priv;
+	struct virtio_queue *vq = &cdev->vqs[VIRTIO_CONSOLE_RX_QUEUE];
+	struct virtio_iovec *iov = cdev->rx_iov;
+	struct virtio_device *dev = cdev->vdev;
+
+	if (virtio_queue_available(vq)) {
+		rc = virtio_queue_get_iovec(vq, iov,
+					    &iov_cnt, &total_len, &head);
+		if (rc) {
+			my_print(dev, "%s: failed to get iovec\n",
+				 __FUNCTION__);
+			return rc;
+		}
+		if (iov_cnt) {
+			virtio_buf_to_iovec_write(dev, &iov[0], 1, buf, 1);
+
+			virtio_queue_set_used_elem(vq, head, 1);
+
+			if (virtio_queue_should_signal(vq)) {
+				if (dev->vn && dev->vn->notify) {
+					dev->vn->notify(dev, VIRTIO_CONSOLE_RX_QUEUE);
+				}
+			}
+		}
+	}
+
 	return 0;
 }
 
@@ -230,6 +259,26 @@ static int virtio_console_read_config(struct virtio_device *dev,
 static int virtio_console_write_config(struct virtio_device *dev,
 				       uint32_t offset, void *src, uint32_t src_len)
 {
+	uint32_t data;
+
+	if (offset == offsetof(struct virtio_console_config, emerg_wr)) {
+		switch (src_len) {
+		case 1:
+			data = *(u8 *)src;
+			break;
+		case 2:
+			data = *(u16 *)src;
+			break;
+		case 4:
+			data = *(u32 *)src;
+			break;
+		default:
+			data = 0x0;
+			break;
+		};
+		my_console_send(dev, &data, src_len);
+	}
+
 	return 0;
 }
 
@@ -253,6 +302,7 @@ static int virtio_console_connect(struct virtio_device *dev,
 	cdev->config.cols = 80;
 	cdev->config.rows = 24;
 	cdev->config.max_nr_ports = 1;
+	cdev->vdev = dev;
 
 	dev->emu_data = cdev;
 
