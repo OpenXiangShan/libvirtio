@@ -182,6 +182,7 @@ static int virtio_console_do_tx(struct virtio_device *dev,
 static int virtio_console_receive(void *buf, int len, void *priv)
 {
 	int rc;
+	uint32_t copied, pos = 0;
 	uint16_t head = 0;
 	uint32_t iov_cnt = 0, total_len = 0;
 	struct virtio_console_dev *cdev = priv;
@@ -189,7 +190,7 @@ static int virtio_console_receive(void *buf, int len, void *priv)
 	struct virtio_iovec *iov = cdev->rx_iov;
 	struct virtio_device *dev = cdev->vdev;
 
-	if (virtio_queue_available(vq)) {
+	while (pos < len && virtio_queue_available(vq)) {
 		rc = virtio_queue_get_iovec(vq, iov,
 					    &iov_cnt, &total_len, &head);
 		if (rc) {
@@ -198,9 +199,14 @@ static int virtio_console_receive(void *buf, int len, void *priv)
 			return rc;
 		}
 		if (iov_cnt) {
-			virtio_buf_to_iovec_write(dev, &iov[0], 1, buf, 1);
+			copied = virtio_buf_to_iovec_write(dev, iov, iov_cnt,
+							   buf + pos,
+							   len - pos);
+			if (!copied)
+				break;
 
-			virtio_queue_set_used_elem(vq, head, 1);
+			pos += copied;
+			virtio_queue_set_used_elem(vq, head, copied);
 
 			if (virtio_queue_should_signal(vq)) {
 				if (dev->vn && dev->vn->notify) {
@@ -210,7 +216,7 @@ static int virtio_console_receive(void *buf, int len, void *priv)
 		}
 	}
 
-	return 0;
+	return pos;
 }
 
 static int virtio_console_notify_vq(struct virtio_device *dev, uint32_t vq)
@@ -260,6 +266,7 @@ static int virtio_console_write_config(struct virtio_device *dev,
 				       uint32_t offset, void *src, uint32_t src_len)
 {
 	uint32_t data;
+	uint8_t ch;
 
 	if (offset == offsetof(struct virtio_console_config, emerg_wr)) {
 		switch (src_len) {
@@ -276,7 +283,8 @@ static int virtio_console_write_config(struct virtio_device *dev,
 			data = 0x0;
 			break;
 		};
-		my_console_send(dev, &data, src_len);
+		ch = data;
+		my_console_send(dev, &ch, sizeof(ch));
 	}
 
 	return 0;
