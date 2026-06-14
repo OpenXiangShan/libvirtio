@@ -17,12 +17,21 @@ other environments.
 make
 ```
 
+## Source layout
+```
+virtio/      # Sources and internal headers for libMyVirtio.a
+backend/     # Sources and internal headers for libMyVirtio_backend.a
+template/    # Integration template showing how to wire both libraries
+```
+
 ## Output
 After building, the following files are generated under the output/ directory:
 ```
 output/
 ├── libMyVirtio.a      # Static library
-└── virtio_wrapper.h   # Public header to include in your project
+├── libMyVirtio_backend.a
+├── virtio_wrapper.h   # Public header for libMyVirtio.a
+└── virtio_backend.h   # Public header for libMyVirtio_backend.a
 ```
 
 # Acknowledgements

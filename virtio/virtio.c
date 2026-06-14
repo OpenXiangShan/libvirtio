@@ -251,7 +251,9 @@ bool virtio_queue_available(struct virtio_queue *vq)
 	uint32_t ret;
 	uint64_t avail_pa;
 
-	if (!vq) {
+	if (!vq || !vq->vdev || !vq->desc_count ||
+	    !vq->vring.desc_pa || !vq->vring.avail_pa ||
+	    !vq->vring.used_pa) {
 		return false;
 	}
 

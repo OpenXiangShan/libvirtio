@@ -70,8 +70,10 @@ static void __virtio_net_tx_poke(struct virtio_net_dev *ndev, int budget, uint32
 					 data, pkt_len);
 		if (pkt_len != my_net_write_tap(dev, 0, data, pkt_len)) {
 			my_print(dev, "%s write tap failed\n", __FUNCTION__);
+			my_free(dev, (uint64_t)data, pkt_len);
 			return;
 		}
+		my_free(dev, (uint64_t)data, pkt_len);
 
 		virtio_queue_set_used_elem(vq, head, total_len);
 
@@ -102,25 +104,46 @@ static int virtio_net_receive(void *buf, int len, void *priv)
 	uint64_t iov0_addr;
 	uint32_t iov_cnt = 0, iov0_len, total_len = 0, pkt_len = 0;
 	struct virtio_net_dev *ndev = priv;
-	struct virtio_net_queue *q = &ndev->vqs[0];
-	struct virtio_queue *vq = &q->vq;
-	struct virtio_iovec *iov = q->iov;
-	struct virtio_device *dev = ndev->vdev;
+	struct virtio_net_queue *q;
+	struct virtio_queue *vq;
+	struct virtio_iovec *iov;
+	struct virtio_device *dev;
 	struct virtio_net_hdr hdr;
 
-	if (!ndev)
-		return -1;
+	if (!ndev || len <= 0)
+		return VIRTIO_EINVALID;
+
+	q = &ndev->vqs[0];
+	vq = &q->vq;
+	iov = q->iov;
+	dev = ndev->vdev;
+
+	if (!ndev->can_receive || !q->valid)
+		return VIRTIO_EAGAIN;
 
 	pkt_len = len;
 
-	if (virtio_queue_available(vq)) {
-		rc = virtio_queue_get_iovec(vq, iov,
-					    &iov_cnt, &total_len, &head);
-		if (rc) {
-			my_print(dev, "%s: failed to get iovec (error %d)\n",
-				 __FUNCTION__, rc);
-			return rc;
+	if (!virtio_queue_available(vq))
+		return VIRTIO_EAGAIN;
+
+	rc = virtio_queue_get_iovec(vq, iov,
+				    &iov_cnt, &total_len, &head);
+	if (rc) {
+		my_print(dev, "%s: failed to get iovec (error %d)\n",
+			 __FUNCTION__, rc);
+		return rc;
+	}
+
+	if (!iov_cnt || total_len < sizeof(hdr) + pkt_len ||
+	    iov[0].len < sizeof(hdr)) {
+		my_print(dev, "%s: RX buffer too small, total=%u pkt=%u\n",
+			 __FUNCTION__, total_len, pkt_len);
+		virtio_queue_set_used_elem(vq, head, 0);
+		if (virtio_queue_should_signal(vq)) {
+			if (dev->vn && dev->vn->notify)
+				dev->vn->notify(dev, q->num);
 		}
+		return VIRTIO_ENOSPC;
 	}
 
 	memset(&hdr, 0, sizeof(hdr));
