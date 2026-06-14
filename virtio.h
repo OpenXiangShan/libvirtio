@@ -111,6 +111,9 @@ struct virtio_emulator {
 				    uint32_t select, uint32_t features);
 	int (*init_vq) (struct virtio_device *dev, uint32_t vq, uint32_t page_size,
 			uint32_t align, uint32_t pfn);
+	int (*init_vq_addr) (struct virtio_device *dev, uint32_t vq,
+			     uint64_t desc_addr, uint64_t avail_addr,
+			     uint64_t used_addr, uint32_t size);
 	int (*get_pfn_vq) (struct virtio_device *dev, uint32_t vq);
 	int (*get_size_vq) (struct virtio_device *dev, uint32_t vq);
 	int (*set_size_vq) (struct virtio_device *dev, uint32_t vq, int size);
@@ -151,6 +154,9 @@ bool virtio_queue_should_signal(struct virtio_queue *vq);
 int virtio_queue_setup(struct virtio_device *dev, struct virtio_queue *vq,
 		       uint64_t guest_pfn, uint64_t guest_page_size,
 		       uint32_t desc_count, uint32_t align);
+int virtio_queue_setup_split(struct virtio_device *dev, struct virtio_queue *vq,
+			     uint64_t desc_addr, uint64_t avail_addr,
+			     uint64_t used_addr, uint32_t desc_count);
 int virtio_queue_get_head_iovec(struct virtio_queue *vq,
 				uint16_t head, struct virtio_iovec *iov,
 				uint32_t *ret_iov_cnt, uint32_t *ret_total_len,

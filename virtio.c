@@ -342,6 +342,41 @@ int virtio_queue_setup(struct virtio_device *dev, struct virtio_queue *vq,
 	return 0;
 }
 
+int virtio_queue_setup_split(struct virtio_device *dev, struct virtio_queue *vq,
+			     uint64_t desc_addr, uint64_t avail_addr,
+			     uint64_t used_addr, uint32_t desc_count)
+{
+	uint64_t used_end;
+
+	if (!dev || !vq || !desc_count || !desc_addr || !avail_addr || !used_addr)
+		return -1;
+
+	used_end = used_addr + sizeof(uint16_t) * 2 +
+		   sizeof(struct vring_used_elem) * desc_count;
+
+	vq->last_avail_idx = 0;
+	vq->last_used_signalled = 0;
+
+	vq->vring.num = desc_count;
+	vq->vring.desc = NULL;
+	vq->vring.desc_pa = desc_addr;
+	vq->vring.avail = NULL;
+	vq->vring.avail_pa = avail_addr;
+	vq->vring.used = NULL;
+	vq->vring.used_pa = used_addr;
+
+	vq->desc_count = desc_count;
+	vq->align = 0;
+	vq->guest_pfn = 0;
+	vq->guest_page_size = 0;
+	vq->guest_addr = desc_addr;
+	vq->host_addr = 0;
+	vq->total_size = (used_end > desc_addr) ? (used_end - desc_addr) : 0;
+	vq->vdev = dev;
+
+	return 0;
+}
+
 static unsigned next_desc(struct virtio_queue *vq,
 			  struct vring_desc *desc,
 			  uint32_t i, uint32_t max)

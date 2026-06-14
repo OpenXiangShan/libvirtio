@@ -1,0 +1,774 @@
+diff --git a/virtio_wrapper.c b/virtio_wrapper.c
+index 3f16dac..1416bf5 100644
+--- a/virtio_wrapper.c
++++ b/virtio_wrapper.c
+@@ -3,6 +3,7 @@
+ #include "virtio.h"
+ #include "virtio_wrapper.h"
+ #include "virtio_mmio.h"
++#include "virtio_pci.h"
+ #include "virtio_blk.h"
+ #include "virtio_net.h"
+ #include "virtio_console.h"
+@@ -23,24 +24,202 @@
+  * this program.  If not, see <http://www.gnu.org/licenses/>.
+  */
+ 
+-struct virtio_mmio_dev_info {
++struct virtio_wrapper_dev_info {
+ 	const char name[64];
+ 	struct virtio_emulator* (*create)(void);
++	uint16_t pci_device_id;
+ };
+ 
+-static struct virtio_mmio_dev_info virtio_dev_info[] = {
+-	{ VIRTIO_EMU_NAME_BLK,     virtio_blk_emulator_create },
+-	{ VIRTIO_EMU_NAME_NET,     virtio_net_emulator_create },
+-	{ VIRTIO_EMU_NAME_CONSOLE, virtio_console_emulator_create },
++struct virtio_pci_ecam_info {
++	struct list_head list;
++	virtio_handle_t handle;
++	struct libvirtio_ops *ops;
++	void *priv;
++};
++
++struct virtio_pci_dev {
++	struct virtio_mmio_dev mdev;
++	struct pci_config_header header;
++	virtio_pci_ep_handle_t ep_handle;
++	virtio_handle_t ecam_handle;
++	uint32_t bdf;
++};
++
++static struct virtio_wrapper_dev_info virtio_dev_info[] = {
++	{ VIRTIO_EMU_NAME_BLK,     virtio_blk_emulator_create,     PCI_DEVICE_ID_VIRTIO_BLOCK },
++	{ VIRTIO_EMU_NAME_NET,     virtio_net_emulator_create,     PCI_DEVICE_ID_VIRTIO_NET },
++	{ VIRTIO_EMU_NAME_CONSOLE, virtio_console_emulator_create, PCI_DEVICE_ID_VIRTIO_CONSOLE },
+ };
+ #define VIRTIO_DEV_INFO_CNT (sizeof(virtio_dev_info) / sizeof(virtio_dev_info[0]))
++static LIST_HEAD(virtio_pci_ecam_info_list);
++
++static const struct virtio_wrapper_dev_info *virtio_find_dev_info(const char *name)
++{
++	int i;
++
++	if (!name)
++		return NULL;
++
++	for (i = 0; i < VIRTIO_DEV_INFO_CNT; i++) {
++		if (!strcmp(virtio_dev_info[i].name, name))
++			return &virtio_dev_info[i];
++	}
++
++	return NULL;
++}
++
++static struct virtio_pci_ecam_info *virtio_find_pci_ecam_info(virtio_handle_t handle)
++{
++	struct virtio_pci_ecam_info *ecam_info;
++
++	list_for_each_entry(ecam_info, &virtio_pci_ecam_info_list, list) {
++		if (ecam_info->handle == handle)
++			return ecam_info;
++	}
++
++	return NULL;
++}
++
++static int virtio_pci_dev_notify(struct virtio_device *dev, uint32_t vq)
++{
++	(void)vq;
++
++	return my_set_irq(dev);
++}
++
++static struct virtio_notify pci_notify = {
++	.name = "virtio_pci",
++	.notify = virtio_pci_dev_notify,
++};
++
++static void virtio_pci_dev_init_header(struct virtio_pci_dev *pdev,
++				       const struct virtio_wrapper_dev_info *info)
++{
++	memset(&pdev->header, 0, sizeof(pdev->header));
++
++	pdev->header.vendor_id = PCI_SUBVENDOR_ID_REDHAT;
++	pdev->header.device_id = info->pci_device_id;
++	pdev->header.header_type = PCI_HEADER_TYPE_NORMAL;
++	pdev->header.subsystem_vendor_id = PCI_SUBVENDOR_ID_REDHAT;
++	pdev->header.subsystem_id = pdev->mdev.dev.emu->id_table[0].type;
++	pdev->header.interrupt_pin = 1;
++
++	switch (info->pci_device_id) {
++	case PCI_DEVICE_ID_VIRTIO_NET:
++		pdev->header.class_code = 0x02;
++		break;
++	case PCI_DEVICE_ID_VIRTIO_BLOCK:
++		pdev->header.class_code = 0x01;
++		pdev->header.subclass = 0x80;
++		break;
++	case PCI_DEVICE_ID_VIRTIO_CONSOLE:
++		pdev->header.class_code = 0x07;
++		pdev->header.subclass = 0x80;
++		break;
++	default:
++		break;
++	}
++}
++
++static int virtio_pci_dev_read_emu_config(struct virtio_pci_dev *pdev,
++					  uint32_t offset, void *dst, int len)
++{
++	uint8_t data[4] = { 0 };
++
++	if (!pdev->mdev.dev.emu || !pdev->mdev.dev.emu->read_config)
++		return 0;
++
++	if (pdev->mdev.dev.emu->read_config(&pdev->mdev.dev, offset, data, len))
++		return -1;
++
++	memcpy(dst, data, len);
++
++	return 0;
++}
++
++static int virtio_pci_dev_config_read(uint32_t offset, void *dst, int len, void *priv)
++{
++	struct virtio_pci_dev *pdev = priv;
++	uint8_t *buf = dst;
++	int chunk;
++
++	if (!pdev || !dst || len <= 0 || len > 4)
++		return -1;
++
++	memset(dst, 0, len);
++
++	if (offset < sizeof(pdev->header)) {
++		chunk = sizeof(pdev->header) - offset;
++		if (chunk > len)
++			chunk = len;
++
++		memcpy(buf, ((uint8_t *)&pdev->header) + offset, chunk);
++		buf += chunk;
++		len -= chunk;
++		offset = 0;
++	} else {
++		offset -= sizeof(pdev->header);
++	}
++
++	if (!len)
++		return 0;
++
++	/*
++	 * Until the full virtio-pci capability layout exists, expose the
++	 * emulator-specific config immediately after the standard PCI header.
++	 */
++	return virtio_pci_dev_read_emu_config(pdev, offset, buf, len);
++}
++
++static int virtio_pci_dev_config_write(uint32_t offset, void *src, int len, void *priv)
++{
++	struct virtio_pci_dev *pdev = priv;
++	uint8_t *buf = src;
++	int chunk;
++
++	if (!pdev || !src || len <= 0 || len > 4)
++		return -1;
++
++	if (offset < sizeof(pdev->header)) {
++		chunk = sizeof(pdev->header) - offset;
++		if (chunk > len)
++			chunk = len;
++
++		memcpy(((uint8_t *)&pdev->header) + offset, buf, chunk);
++		buf += chunk;
++		len -= chunk;
++		offset = 0;
++	} else {
++		offset -= sizeof(pdev->header);
++	}
++
++	if (!len)
++		return 0;
++
++	if (!pdev->mdev.dev.emu || !pdev->mdev.dev.emu->write_config)
++		return 0;
++
++	return pdev->mdev.dev.emu->write_config(&pdev->mdev.dev, offset, buf, len);
++}
++
++static void virtio_pci_dev_free(struct virtio_pci_dev *pdev)
++{
++	if (!pdev || !pdev->mdev.ops || !pdev->mdev.ops->mm_free)
++		return;
++
++	pdev->mdev.ops->mm_free((uint64_t)(uintptr_t)pdev, sizeof(*pdev));
++}
+ 
+ void virtio_process_req(virtio_handle_t handle)
+ {
+ 	struct virtio_mmio_dev *dev = handle;
+-	struct libvirtio_callback *cb = &dev->cb;
++	struct libvirtio_callback *cb;
+ 
+-	if (!dev || !cb || !cb->process_req)
++	if (!dev)
++		return;
++
++	cb = &dev->cb;
++	if (!cb || !cb->process_req)
+ 		return;
+ 
+ 	cb->process_req(cb->data);
+@@ -49,9 +228,13 @@ void virtio_process_req(virtio_handle_t handle)
+ int virtio_receive(virtio_handle_t handle, void *buf, int len)
+ {
+ 	struct virtio_mmio_dev *dev = handle;
+-	struct libvirtio_callback *cb = &dev->cb;
++	struct libvirtio_callback *cb;
+ 
+-	if (!dev || !cb || !cb->receive)
++	if (!dev)
++		return -1;
++
++	cb = &dev->cb;
++	if (!cb || !cb->receive)
+ 		return -1;
+ 
+ 	return cb->receive(buf, len, cb->data);
+@@ -88,8 +271,8 @@ virtio_handle_t virtio_mmio_create(const char *name, uint64_t start, int len,
+ 				   struct libvirtio_ops *ops, void *priv)
+ {
+ 	struct virtio_mmio_dev *dev;
+-	struct virtio_emulator *emu = NULL;
+-	int i;
++	const struct virtio_wrapper_dev_info *dev_info;
++	struct virtio_emulator *emu;
+ 
+ 	dev = virtio_dev_mmio_create(start, start + len, ops);
+ 	if (!dev)
+@@ -97,14 +280,118 @@ virtio_handle_t virtio_mmio_create(const char *name, uint64_t start, int len,
+ 
+ 	dev->priv = priv;
+ 
+-	for (i = 0; i < VIRTIO_DEV_INFO_CNT; i++) {
+-		if (!strcmp(virtio_dev_info[i].name, name))
+-			emu = virtio_dev_info[i].create();
+-	}
+-	if (!emu)
++	dev_info = virtio_find_dev_info(name);
++	emu = dev_info ? dev_info->create() : NULL;
++	if (!emu) {
++		if (ops && ops->mm_free)
++			ops->mm_free((uint64_t)(uintptr_t)dev, sizeof(*dev));
+ 		return NULL;
++	}
+ 
+ 	virtio_mmio_dev_connect(name, dev, emu);
+ 
+ 	return dev;
+ }
++
++virtio_handle_t virtio_pci_ecam_create(const char *name, uint64_t ecam_base,
++				       uint64_t ecam_size,
++				       struct libvirtio_ops *ops, void *priv)
++{
++	struct virtio_pci_ecam_info *ecam_info;
++	virtio_handle_t ecam_handle;
++
++	if (!ops || !ops->mm_alloc || !ops->mm_free)
++		return NULL;
++
++	ecam_info = (struct virtio_pci_ecam_info *)(uintptr_t)ops->mm_alloc(sizeof(*ecam_info));
++	if (!ecam_info)
++		return NULL;
++
++	ecam_handle = virtio_pci_ecam_dev_create(name, ecam_base, ecam_size, ops, priv);
++	if (!ecam_handle) {
++		ops->mm_free((uint64_t)(uintptr_t)ecam_info, sizeof(*ecam_info));
++		return NULL;
++	}
++
++	ecam_info->handle = ecam_handle;
++	ecam_info->ops = ops;
++	ecam_info->priv = priv;
++	list_add_tail(&ecam_info->list, &virtio_pci_ecam_info_list);
++
++	return ecam_handle;
++}
++
++int virtio_pci_ecam_read(virtio_handle_t handle, uint64_t offset,
++			 void *dst, int len)
++{
++	return virtio_pci_ecam_dev_read(handle, offset, dst, len);
++}
++
++int virtio_pci_ecam_write(virtio_handle_t handle, uint64_t offset,
++			  void *src, int len)
++{
++	return virtio_pci_ecam_dev_write(handle, offset, src, len);
++}
++
++virtio_handle_t virtio_pci_create(const char *name, virtio_handle_t ecam_handle,
++				  uint32_t bdf)
++{
++	const struct virtio_wrapper_dev_info *dev_info;
++	struct virtio_pci_ecam_info *ecam_info;
++	struct virtio_pci_dev *pdev;
++	struct virtio_emulator *emu;
++	struct virtio_pci_ep_ops ep_ops;
++
++	dev_info = virtio_find_dev_info(name);
++	ecam_info = virtio_find_pci_ecam_info(ecam_handle);
++	if (!dev_info || !ecam_info || !ecam_info->ops || !ecam_info->ops->mm_alloc)
++		return NULL;
++
++	emu = dev_info->create();
++	if (!emu)
++		return NULL;
++
++	pdev = (struct virtio_pci_dev *)(uintptr_t)ecam_info->ops->mm_alloc(sizeof(*pdev));
++	if (!pdev)
++		return NULL;
++
++	memset(pdev, 0, sizeof(*pdev));
++	pdev->ecam_handle = ecam_handle;
++	pdev->bdf = bdf;
++	pdev->mdev.ops = ecam_info->ops;
++	pdev->mdev.priv = ecam_info->priv;
++	pdev->mdev.dev.vn = &pci_notify;
++	pdev->mdev.dev.vn_data = &pdev->mdev;
++	INIT_LIST_HEAD(&pdev->mdev.dev.addr_trans_tables);
++
++	strcpy(pdev->mdev.dev.name, name);
++	pdev->mdev.dev.emu = emu;
++	virtio_pci_dev_init_header(pdev, dev_info);
++
++	ep_ops = (struct virtio_pci_ep_ops) {
++		.config_read = virtio_pci_dev_config_read,
++		.config_write = virtio_pci_dev_config_write,
++		.priv = pdev,
++	};
++
++	pdev->ep_handle = virtio_pci_ep_create(&ep_ops);
++	if (!pdev->ep_handle) {
++		virtio_pci_dev_free(pdev);
++		return NULL;
++	}
++
++	if (virtio_pci_ep_connect(ecam_handle, bdf, pdev->ep_handle)) {
++		virtio_pci_ep_destroy(pdev->ep_handle);
++		virtio_pci_dev_free(pdev);
++		return NULL;
++	}
++
++	if (emu->connect && emu->connect(&pdev->mdev.dev, emu)) {
++		virtio_pci_ep_disconnect(ecam_handle, bdf);
++		virtio_pci_ep_destroy(pdev->ep_handle);
++		virtio_pci_dev_free(pdev);
++		return NULL;
++	}
++
++	return &pdev->mdev;
++}
+diff --git a/virtio_wrapper.h b/virtio_wrapper.h
+index 7baa1f2..18b528b 100644
+--- a/virtio_wrapper.h
++++ b/virtio_wrapper.h
+@@ -61,4 +61,27 @@ int virtio_mmio_write(virtio_handle_t handle, uint64_t addr, uint32_t val,
+ virtio_handle_t virtio_mmio_create(const char *name, uint64_t start, int len,
+ 				   struct libvirtio_ops *ops, void *priv);
+ 
++/* PCIe ECAM access interface */
++#define VIRTIO_PCI_BDF(bus, dev, func)	(((bus) << 8) | ((dev) << 3) | (func))
++#define VIRTIO_PCI_BDF_BUS(bdf)		(((bdf) >> 8) & 0xff)
++#define VIRTIO_PCI_BDF_DEV(bdf)		(((bdf) >> 3) & 0x1f)
++#define VIRTIO_PCI_BDF_FUNC(bdf)	((bdf) & 0x07)
++
++/* ECAM offset encoding: offset = (bus << 20) | (dev << 15) | (func << 12) | reg */
++#define VIRTIO_PCI_ECAM_OFFSET(bdf, reg) \
++	((VIRTIO_PCI_BDF_BUS(bdf) << 20) | \
++	 (VIRTIO_PCI_BDF_DEV(bdf) << 15) | \
++	 (VIRTIO_PCI_BDF_FUNC(bdf) << 12) | \
++	 ((reg) & 0xfff))
++
++virtio_handle_t virtio_pci_ecam_create(const char *name, uint64_t ecam_base,
++				       uint64_t ecam_size,
++				       struct libvirtio_ops *ops, void *priv);
++int virtio_pci_ecam_read(virtio_handle_t handle, uint64_t offset,
++			 void *dst, int len);
++int virtio_pci_ecam_write(virtio_handle_t handle, uint64_t offset,
++			  void *src, int len);
++virtio_handle_t virtio_pci_create(const char *name, virtio_handle_t ecam_handle,
++				  uint32_t bdf);
++
+ #endif
+diff --git a/virtio_pci.c b/virtio_pci.c
+new file mode 100644
+index 0000000..b873e53
+--- /dev/null
++++ b/virtio_pci.c
+@@ -0,0 +1,261 @@
++/*
++ * VirtIO PCI ECAM Emulator
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms and conditions of the GNU General Public License,
++ * version 2 or later, as published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
++ * more details.
++ *
++ * You should have received a copy of the GNU General Public License along with
++ * this program.  If not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include <stdint.h>
++#include <stddef.h>
++#include <string.h>
++#include <stdbool.h>
++#include <stdlib.h>
++#include "virtio_wrapper.h"
++#include "virtio_pci.h"
++#include "utils.h"
++
++/* ECAM register offset helpers */
++#define ECAM_BUS_SHIFT		20
++#define ECAM_DEV_SHIFT		15
++#define ECAM_FUNC_SHIFT		12
++#define ECAM_REG_MASK		0xfff
++
++/* Extract BDF from ECAM offset */
++static inline uint32_t ecam_offset_to_bdf(uint64_t offset)
++{
++	uint32_t bus = (offset >> ECAM_BUS_SHIFT) & 0xff;
++	uint32_t dev = (offset >> ECAM_DEV_SHIFT) & 0x1f;
++	uint32_t func = (offset >> ECAM_FUNC_SHIFT) & 0x07;
++	return VIRTIO_PCI_BDF(bus, dev, func);
++}
++
++/* Extract register offset from ECAM offset */
++static inline uint32_t ecam_offset_to_reg(uint64_t offset)
++{
++	return offset & ECAM_REG_MASK;
++}
++
++/* EP device entry (attached to ECAM) */
++struct virtio_pci_ep_device {
++	struct list_head list;
++	uint32_t bdf;
++	struct virtio_pci_ep_ops ops;
++};
++
++/* EP device handle structure */
++struct virtio_pci_ep {
++	struct virtio_pci_ep_ops ops;
++};
++
++/* ECAM device instance */
++struct virtio_pci_ecam_dev {
++	struct list_head list;
++	struct list_head ep_device_list;
++	uint64_t ecam_base;
++	uint64_t ecam_size;
++	struct libvirtio_ops *ops;
++	void *priv;
++};
++
++static LIST_HEAD(ecam_dev_list);
++
++/* Find ECAM device by handle */
++static struct virtio_pci_ecam_dev *find_ecam_dev(virtio_handle_t handle)
++{
++	struct virtio_pci_ecam_dev *ecam;
++
++	list_for_each_entry(ecam, &ecam_dev_list, list) {
++		if ((virtio_handle_t)(uintptr_t)ecam == handle)
++			return ecam;
++	}
++
++	return NULL;
++}
++
++virtio_pci_ep_handle_t virtio_pci_ep_create(struct virtio_pci_ep_ops *ops)
++{
++	struct virtio_pci_ep *ep;
++
++	if (!ops || !ops->config_read || !ops->config_write)
++		return NULL;
++
++	ep = (struct virtio_pci_ep *)(uintptr_t)malloc(sizeof(*ep));
++	if (!ep)
++		return NULL;
++
++	ep->ops = *ops;
++	return (virtio_pci_ep_handle_t)ep;
++}
++
++void virtio_pci_ep_destroy(virtio_pci_ep_handle_t ep_handle)
++{
++	struct virtio_pci_ep *ep = (struct virtio_pci_ep *)ep_handle;
++
++	if (ep)
++		free(ep);
++}
++
++static struct virtio_pci_ep_device *find_ep_device(struct virtio_pci_ecam_dev *ecam,
++						   uint32_t bdf)
++{
++	struct virtio_pci_ep_device *ep;
++
++	list_for_each_entry(ep, &ecam->ep_device_list, list) {
++		if (ep->bdf == bdf)
++			return ep;
++	}
++
++	return NULL;
++}
++
++/* Check if BDF is already occupied in this ECAM */
++static bool is_bdf_occupied(struct virtio_pci_ecam_dev *ecam, uint32_t bdf)
++{
++	return find_ep_device(ecam, bdf) != NULL;
++}
++
++int virtio_pci_ep_connect(virtio_handle_t ecam_handle, uint32_t bdf,
++			  virtio_pci_ep_handle_t ep_handle)
++{
++	struct virtio_pci_ecam_dev *ecam;
++	struct virtio_pci_ep_device *ep_dev;
++	struct virtio_pci_ep *ep = (struct virtio_pci_ep *)ep_handle;
++
++	if (!ep || !ep_handle)
++		return -1;
++
++	ecam = find_ecam_dev(ecam_handle);
++	if (!ecam)
++		return -1;
++
++	/* Check if BDF is already occupied */
++	if (is_bdf_occupied(ecam, bdf))
++		return -1;	/* BDF already in use */
++
++	ep_dev = (struct virtio_pci_ep_device *)(uintptr_t)ecam->ops->mm_alloc(sizeof(*ep_dev));
++	if (!ep_dev)
++		return -1;
++
++	ep_dev->bdf = bdf;
++	ep_dev->ops = ep->ops;
++	list_add_tail(&ep_dev->list, &ecam->ep_device_list);
++
++	return 0;
++}
++
++int virtio_pci_ep_disconnect(virtio_handle_t ecam_handle, uint32_t bdf)
++{
++	struct virtio_pci_ecam_dev *ecam;
++	struct virtio_pci_ep_device *ep, *n;
++
++	ecam = find_ecam_dev(ecam_handle);
++	if (!ecam)
++		return -1;
++
++	list_for_each_entry_safe(ep, n, &ecam->ep_device_list, list) {
++		if (ep->bdf == bdf) {
++			list_del(&ep->list);
++			ecam->ops->mm_free((uint64_t)(uintptr_t)ep, sizeof(*ep));
++			return 0;
++		}
++	}
++
++	return -1;	/* Not found */
++}
++
++int virtio_pci_ecam_access_read(virtio_handle_t handle, uint64_t offset, void *dst, int len)
++{
++	struct virtio_pci_ecam_dev *ecam;
++	struct virtio_pci_ep_device *ep;
++	uint32_t bdf, reg;
++
++	if (!dst || len <= 0 || len > 4)
++		return -1;
++
++	ecam = find_ecam_dev(handle);
++	if (!ecam)
++		return -1;
++
++	bdf = ecam_offset_to_bdf(offset);
++	reg = ecam_offset_to_reg(offset);
++
++	ep = find_ep_device(ecam, bdf);
++	if (!ep) {
++		/* Return all-ones for unregistered devices (standard PCI behavior) */
++		memset(dst, 0xff, len);
++		return 0;
++	}
++
++	/* Dispatch to EP device's config read callback */
++	return ep->ops.config_read(reg, dst, len, ep->ops.priv);
++}
++
++int virtio_pci_ecam_access_write(virtio_handle_t handle, uint64_t offset,
++				 void *src, int len)
++{
++	struct virtio_pci_ecam_dev *ecam;
++	struct virtio_pci_ep_device *ep;
++	uint32_t bdf, reg;
++
++	if (!src || len <= 0 || len > 4)
++		return -1;
++
++	ecam = find_ecam_dev(handle);
++	if (!ecam)
++		return -1;
++
++	bdf = ecam_offset_to_bdf(offset);
++	reg = ecam_offset_to_reg(offset);
++
++	ep = find_ep_device(ecam, bdf);
++	if (!ep)
++		return -1;	/* Silently ignore writes to unregistered devices */
++
++	/* Dispatch to EP device's config write callback */
++	return ep->ops.config_write(reg, src, len, ep->ops.priv);
++}
++
++virtio_handle_t virtio_pci_ecam_dev_create(const char *name, uint64_t ecam_base,
++					   uint64_t ecam_size,
++					   struct libvirtio_ops *ops, void *priv)
++{
++	struct virtio_pci_ecam_dev *ecam;
++
++	if (!ops || !name)
++		return NULL;
++
++	ecam = (struct virtio_pci_ecam_dev *)(uintptr_t)ops->mm_alloc(sizeof(*ecam));
++	if (!ecam)
++		return NULL;
++
++	ecam->ecam_base = ecam_base;
++	ecam->ecam_size = ecam_size;
++	ecam->ops = ops;
++	ecam->priv = priv;
++	INIT_LIST_HEAD(&ecam->ep_device_list);
++
++	list_add_tail(&ecam->list, &ecam_dev_list);
++
++	return (virtio_handle_t)(uintptr_t)ecam;
++}
++
++int virtio_pci_ecam_dev_read(virtio_handle_t handle, uint64_t offset,
++			     void *dst, int len)
++{
++	return virtio_pci_ecam_access_read(handle, offset, dst, len);
++}
++
++int virtio_pci_ecam_dev_write(virtio_handle_t handle, uint64_t offset,
++			      void *src, int len)
++{
++	return virtio_pci_ecam_access_write(handle, offset, src, len);
++}
+diff --git a/virtio_pci.h b/virtio_pci.h
+new file mode 100644
+index 0000000..fec7e01
+--- /dev/null
++++ b/virtio_pci.h
+@@ -0,0 +1,96 @@
++#ifndef __VIRTIO_PCI_H__
++#define __VIRTIO_PCI_H__
++
++#include <stdint.h>
++#include "virtio_wrapper.h"
++#include "list.h"
++
++/* PCI Configuration Space Header */
++struct pci_config_header {
++	uint16_t vendor_id;
++	uint16_t device_id;
++	uint16_t command;
++	uint16_t status;
++	uint8_t  revision_id;
++	uint8_t  prog_if;
++	uint8_t  subclass;
++	uint8_t  class_code;
++	uint8_t  cache_line_size;
++	uint8_t  latency_timer;
++	uint8_t  header_type;
++	uint8_t  bist;
++	uint32_t bar[6];
++	uint32_t cardbus_cis_ptr;
++	uint16_t subsystem_vendor_id;
++	uint16_t subsystem_id;
++	uint32_t expansion_rom_base;
++	uint8_t  capabilities_ptr;
++	uint8_t  reserved[3];
++	uint32_t expansion_rom_reserved;
++	uint8_t  interrupt_line;
++	uint8_t  interrupt_pin;
++	uint8_t  min_gnt;
++	uint8_t  max_lat;
++} __attribute__((packed));
++
++/* PCI Command Register Bits */
++#define PCI_COMMAND_IO		0x0001
++#define PCI_COMMAND_MEMORY	0x0002
++#define PCI_COMMAND_MASTER	0x0004
++
++/* PCI Status Register Bits */
++#define PCI_STATUS_CAP_LIST	0x0010
++
++/* PCI Header Type */
++#define PCI_HEADER_TYPE_NORMAL	0x00
++
++/* VirtIO PCI Subsystem Vendor ID (Red Hat) */
++#define PCI_SUBVENDOR_ID_REDHAT	0x1af4
++
++/* VirtIO PCI Device IDs */
++#define PCI_DEVICE_ID_VIRTIO_NET	0x1000
++#define PCI_DEVICE_ID_VIRTIO_BLOCK	0x1001
++#define PCI_DEVICE_ID_VIRTIO_CONSOLE	0x1003
++
++/* VirtIO PCI Config Register (for legacy) */
++#define VIRTIO_PCI_CONFIG_OFF		0x20
++#define VIRTIO_PCI_CONFIG_LEN		0x100
++
++/* EP device config access callback */
++typedef int (*virtio_pci_config_read_t)(uint32_t offset, void *dst, int len, void *priv);
++typedef int (*virtio_pci_config_write_t)(uint32_t offset, void *src, int len, void *priv);
++
++struct virtio_pci_ep_ops {
++	virtio_pci_config_read_t  config_read;
++	virtio_pci_config_write_t config_write;
++	void *priv;
++};
++
++/* EP device handle */
++typedef void *virtio_pci_ep_handle_t;
++
++/* Create/Destroy EP device */
++virtio_pci_ep_handle_t virtio_pci_ep_create(struct virtio_pci_ep_ops *ops);
++void virtio_pci_ep_destroy(virtio_pci_ep_handle_t ep_handle);
++
++/* Connect/Disconnect EP device to a specific ECAM port (BDF) */
++int virtio_pci_ep_connect(virtio_handle_t ecam_handle, uint32_t bdf,
++			  virtio_pci_ep_handle_t ep_handle);
++int virtio_pci_ep_disconnect(virtio_handle_t ecam_handle, uint32_t bdf);
++
++/* Internal ECAM lifecycle helpers used by the public wrapper */
++virtio_handle_t virtio_pci_ecam_dev_create(const char *name, uint64_t ecam_base,
++					   uint64_t ecam_size,
++					   struct libvirtio_ops *ops, void *priv);
++int virtio_pci_ecam_dev_read(virtio_handle_t handle, uint64_t offset,
++			     void *dst, int len);
++int virtio_pci_ecam_dev_write(virtio_handle_t handle, uint64_t offset,
++			      void *src, int len);
++
++/* ECAM access (called by virtio_pci_ecam_read/write) */
++int virtio_pci_ecam_access_read(virtio_handle_t handle, uint64_t offset,
++				void *dst, int len);
++int virtio_pci_ecam_access_write(virtio_handle_t handle, uint64_t offset,
++				 void *src, int len);
++
++#endif /* __VIRTIO_PCI_H__ */

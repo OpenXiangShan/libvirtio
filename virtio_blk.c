@@ -267,6 +267,26 @@ static int virtio_blk_init_vq(struct virtio_device *dev,
 	return ret;
 }
 
+static int virtio_blk_init_vq_addr(struct virtio_device *dev, uint32_t vq,
+				   uint64_t desc_addr, uint64_t avail_addr,
+				   uint64_t used_addr, uint32_t size)
+{
+	int ret;
+	struct virtio_blk_dev *vbdev = dev->emu_data;
+
+	switch (vq) {
+	case VIRTIO_BLK_IO_QUEUE:
+		ret = virtio_queue_setup_split(dev, &vbdev->vqs[vq], desc_addr,
+					       avail_addr, used_addr, size);
+		break;
+	default:
+		ret = -1;
+		break;
+	};
+
+	return ret;
+}
+
 static int virtio_blk_get_pfn_vq(struct virtio_device *dev, uint32_t vq)
 {
 	int ret = 0;
@@ -425,6 +445,7 @@ static struct virtio_emulator virtio_blk = {
 	.get_host_features      = virtio_blk_get_host_features,
 	.set_guest_features     = virtio_blk_set_guest_features,
 	.init_vq                = virtio_blk_init_vq,
+	.init_vq_addr           = virtio_blk_init_vq_addr,
 	.get_pfn_vq             = virtio_blk_get_pfn_vq,
 	.get_size_vq            = virtio_blk_get_size_vq,
 	.set_size_vq            = virtio_blk_set_size_vq,
