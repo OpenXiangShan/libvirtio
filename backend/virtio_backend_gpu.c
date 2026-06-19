@@ -40,6 +40,7 @@ struct virtio_backend_gpu {
 	uint32_t width;
 	uint32_t height;
 	uint32_t max_outputs;
+	virtio_backend_ui_handle_t ui;
 	struct virtio_backend_gpu_resource *resources;
 	struct virtio_backend_gpu_scanout scanouts[VIRTIO_GPU_MAX_SCANOUTS];
 	int (*guest_read)(void *opaque, uint64_t gpa, void *dst, uint32_t len);
@@ -175,6 +176,8 @@ static void gpu_disable_scanout(struct virtio_backend_gpu *gpu,
 	memset(&gpu->scanouts[scanout_id], 0, sizeof(gpu->scanouts[0]));
 	if (gpu->scanout_disable)
 		gpu->scanout_disable(gpu->opaque, scanout_id);
+	if (gpu->ui)
+		virtio_backend_ui_disable(gpu->ui);
 }
 
 static int gpu_get_display_info(struct virtio_backend_gpu *gpu,
@@ -423,6 +426,11 @@ static int gpu_set_scanout(struct virtio_backend_gpu *gpu, const void *cmd,
 		gpu->scanout_update(gpu->opaque, c->scanout_id, res->pixels,
 				     res->width, res->height, res->stride,
 				     c->r.x, c->r.y, c->r.width, c->r.height);
+	if (gpu->ui)
+		(void)virtio_backend_ui_update(gpu->ui, res->pixels,
+					       res->width, res->height,
+					       res->stride, c->r.x, c->r.y,
+					       c->r.width, c->r.height);
 
 	return gpu_response_nodata(&c->hdr, VIRTIO_GPU_RESP_OK_NODATA,
 				   resp, resp_cap, resp_len);
@@ -460,6 +468,11 @@ static int gpu_resource_flush(struct virtio_backend_gpu *gpu, const void *cmd,
 			}
 		}
 	}
+	if (gpu->ui && res->scanout_mask)
+		(void)virtio_backend_ui_update(gpu->ui, res->pixels,
+					       res->width, res->height,
+					       res->stride, c->r.x, c->r.y,
+					       c->r.width, c->r.height);
 
 	return gpu_response_nodata(&c->hdr, VIRTIO_GPU_RESP_OK_NODATA,
 				   resp, resp_cap, resp_len);
@@ -566,6 +579,7 @@ int virtio_backend_gpu_create(struct virtio_backend *backend,
 					      GPU_DEFAULT_HEIGHT;
 	gpu->max_outputs = config->u.gpu.max_outputs ?
 			   config->u.gpu.max_outputs : 1;
+	gpu->ui = config->u.gpu.ui;
 	gpu->guest_read = config->u.gpu.guest_read;
 	gpu->scanout_update = config->u.gpu.scanout_update;
 	gpu->scanout_disable = config->u.gpu.scanout_disable;

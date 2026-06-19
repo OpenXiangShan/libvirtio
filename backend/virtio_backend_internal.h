@@ -15,6 +15,7 @@ struct virtio_backend_packet {
 struct virtio_backend_queue {
 	pthread_mutex_t lock;
 	pthread_cond_t not_full;
+	pthread_cond_t not_empty;
 	struct virtio_backend_packet *head;
 	struct virtio_backend_packet *tail;
 	unsigned int count;
@@ -22,6 +23,20 @@ struct virtio_backend_queue {
 	uint64_t next_token;
 	int initialized;
 	int stopped;
+};
+
+struct virtio_backend_ui_ops {
+	int (*update)(void *ui, const void *pixels, uint32_t width,
+		      uint32_t height, uint32_t stride, uint32_t x, uint32_t y,
+		      uint32_t w, uint32_t h);
+	void (*disable)(void *ui);
+	int (*read_input)(void *ui, enum virtio_backend_input_profile profile,
+			  struct virtio_backend_input_event *event, int block);
+	void (*destroy)(void *ui);
+};
+
+struct virtio_backend_ui {
+	const struct virtio_backend_ui_ops *ops;
 };
 
 struct virtio_backend;
@@ -50,6 +65,22 @@ struct virtio_backend {
 
 char *virtio_backend_strdup(const char *s);
 
+int virtio_backend_ui_update(virtio_backend_ui_handle_t handle,
+			     const void *pixels, uint32_t width,
+			     uint32_t height, uint32_t stride, uint32_t x,
+			     uint32_t y, uint32_t w, uint32_t h);
+
+void virtio_backend_ui_disable(virtio_backend_ui_handle_t handle);
+
+int virtio_backend_ui_read_input(virtio_backend_ui_handle_t handle,
+				 enum virtio_backend_input_profile profile,
+				 struct virtio_backend_input_event *event,
+				 int block);
+
+int virtio_backend_ui_vnc_create(virtio_backend_ui_handle_t *handle,
+				 const char *listen, uint32_t width,
+				 uint32_t height);
+
 void virtio_backend_log(struct virtio_backend *backend, int level,
 			const char *fmt, ...);
 
@@ -75,6 +106,10 @@ int virtio_backend_queue_done(struct virtio_backend_queue *queue,
 struct virtio_backend_packet *
 virtio_backend_queue_pop(struct virtio_backend_queue *queue);
 
+int virtio_backend_queue_pop_wait(struct virtio_backend_queue *queue,
+				  struct virtio_backend_packet **pkt,
+				  int block);
+
 int virtio_backend_blk_create(struct virtio_backend *backend,
 			      const struct virtio_backend_config *config);
 
@@ -86,5 +121,6 @@ int virtio_backend_console_create(struct virtio_backend *backend,
 
 int virtio_backend_gpu_create(struct virtio_backend *backend,
 			      const struct virtio_backend_config *config);
+
 
 #endif

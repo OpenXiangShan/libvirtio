@@ -2,6 +2,9 @@ CC := gcc
 AR := ar
 CFLAGS := -Wall -g -O0
 SLIRP_CFLAGS := $(shell pkg-config --cflags slirp 2>/dev/null)
+LIBVNCSERVER_DIR := ../libvncserver
+LIBVNCSERVER_BUILD_DIR := $(LIBVNCSERVER_DIR)/build-myvirtio
+LIBVNCSERVER_CFLAGS := -I$(LIBVNCSERVER_DIR)/include -I$(LIBVNCSERVER_BUILD_DIR)/include
 VIRTIO_CFLAGS := -Ivirtio
 BACKEND_CFLAGS := -Ibackend
 
@@ -12,7 +15,8 @@ VIRTIO_SRCS := virtio/fifo.c virtio/utils.c virtio/virtio.c \
 VIRTIO_OBJS := $(patsubst virtio/%.c,build/virtio/%.o,$(VIRTIO_SRCS))
 BACKEND_SRCS := backend/virtio_backend.c backend/virtio_backend_queue.c \
 	backend/virtio_backend_blk.c backend/virtio_backend_console.c \
-	backend/virtio_backend_net.c backend/virtio_backend_gpu.c
+	backend/virtio_backend_net.c backend/virtio_backend_gpu.c \
+	backend/virtio_backend_ui_vnc.c
 BACKEND_OBJS := $(patsubst backend/%.c,build/backend/%.backend.o,$(BACKEND_SRCS))
 TARGET := libMyVirtio.a
 BACKEND_TARGET := libMyVirtio_backend.a
@@ -39,7 +43,7 @@ build/virtio/%.o: virtio/%.c
 
 build/backend/%.backend.o: backend/%.c
 	@mkdir -p build/backend
-	$(CC) $(CFLAGS) $(BACKEND_CFLAGS) $(SLIRP_CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) $(BACKEND_CFLAGS) $(SLIRP_CFLAGS) $(LIBVNCSERVER_CFLAGS) -c $< -o $@
 
 clean:
 	rm -rf build

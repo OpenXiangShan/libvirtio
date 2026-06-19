@@ -14,6 +14,11 @@ int virtio_backend_queue_init(struct virtio_backend_queue *queue,
 		pthread_mutex_destroy(&queue->lock);
 		return -1;
 	}
+	if (pthread_cond_init(&queue->not_empty, NULL)) {
+		pthread_cond_destroy(&queue->not_full);
+		pthread_mutex_destroy(&queue->lock);
+		return -1;
+	}
 	queue->depth = depth;
 	queue->next_token = 1;
 	queue->initialized = 1;
@@ -28,6 +33,7 @@ void virtio_backend_queue_stop(struct virtio_backend_queue *queue)
 	pthread_mutex_lock(&queue->lock);
 	queue->stopped = 1;
 	pthread_cond_broadcast(&queue->not_full);
+	pthread_cond_broadcast(&queue->not_empty);
 	pthread_mutex_unlock(&queue->lock);
 }
 
@@ -41,6 +47,7 @@ void virtio_backend_queue_destroy(struct virtio_backend_queue *queue)
 	pthread_mutex_lock(&queue->lock);
 	queue->stopped = 1;
 	pthread_cond_broadcast(&queue->not_full);
+	pthread_cond_broadcast(&queue->not_empty);
 	pkt = queue->head;
 	while (pkt) {
 		struct virtio_backend_packet *next = pkt->next;
@@ -53,6 +60,7 @@ void virtio_backend_queue_destroy(struct virtio_backend_queue *queue)
 	pthread_mutex_unlock(&queue->lock);
 
 	pthread_cond_destroy(&queue->not_full);
+	pthread_cond_destroy(&queue->not_empty);
 	pthread_mutex_destroy(&queue->lock);
 	memset(queue, 0, sizeof(*queue));
 }
@@ -102,6 +110,7 @@ int virtio_backend_queue_push(struct virtio_backend_queue *queue,
 	}
 	queue->tail = pkt;
 	queue->count++;
+	pthread_cond_signal(&queue->not_empty);
 	pthread_mutex_unlock(&queue->lock);
 
 	return 0;
@@ -174,9 +183,34 @@ int virtio_backend_queue_done(struct virtio_backend_queue *queue,
 struct virtio_backend_packet *
 virtio_backend_queue_pop(struct virtio_backend_queue *queue)
 {
+	struct virtio_backend_packet *pkt = NULL;
+
+	if (virtio_backend_queue_pop_wait(queue, &pkt, 0) < 0)
+		return NULL;
+
+	return pkt;
+}
+
+int virtio_backend_queue_pop_wait(struct virtio_backend_queue *queue,
+				  struct virtio_backend_packet **out,
+				  int block)
+{
 	struct virtio_backend_packet *pkt;
 
+	if (!queue || !out)
+		return -EINVAL;
+
+	*out = NULL;
+
 	pthread_mutex_lock(&queue->lock);
+	while (!queue->head && block && !queue->stopped)
+		pthread_cond_wait(&queue->not_empty, &queue->lock);
+
+	if (queue->stopped && !queue->head) {
+		pthread_mutex_unlock(&queue->lock);
+		return -ESHUTDOWN;
+	}
+
 	pkt = queue->head;
 	if (pkt) {
 		queue->head = pkt->next;
@@ -186,5 +220,10 @@ virtio_backend_queue_pop(struct virtio_backend_queue *queue)
 		pthread_cond_signal(&queue->not_full);
 	}
 	pthread_mutex_unlock(&queue->lock);
-	return pkt;
+
+	if (!pkt)
+		return -EAGAIN;
+
+	*out = pkt;
+	return 0;
 }
