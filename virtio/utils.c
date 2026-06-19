@@ -319,6 +319,16 @@ int libvirtio_gpu_submit_cursor(struct virtio_device *dev, void *cmd,
 						resp_len, mdev->priv);
 }
 
+int libvirtio_input_status(struct virtio_device *dev, void *event, int len)
+{
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
+
+	if (!mdev || !mdev->ops || !mdev->ops->input_ops.status)
+		return -1;
+
+	return mdev->ops->input_ops.status(event, len, mdev->priv);
+}
+
 int libvirtio_set_irq(struct virtio_device *dev)
 {
 	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);

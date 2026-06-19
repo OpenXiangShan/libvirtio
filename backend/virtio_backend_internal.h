@@ -122,5 +122,7 @@ int virtio_backend_console_create(struct virtio_backend *backend,
 int virtio_backend_gpu_create(struct virtio_backend *backend,
 			      const struct virtio_backend_config *config);
 
+int virtio_backend_input_create(struct virtio_backend *backend,
+				const struct virtio_backend_config *config);
 
 #endif

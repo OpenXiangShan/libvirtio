@@ -73,6 +73,10 @@ int libvirtio_gpu_submit_cursor(struct virtio_device *dev, void *cmd,
 #define my_gpu_submit_ctrl      libvirtio_gpu_submit_ctrl
 #define my_gpu_submit_cursor    libvirtio_gpu_submit_cursor
 
+/* virtio input ops */
+int libvirtio_input_status(struct virtio_device *dev, void *event, int len);
+#define my_input_status         libvirtio_input_status
+
 /* generic ops */
 int libvirtio_gphys_read(struct virtio_device *dev, uint64_t gpa, void *dst, uint32_t len);
 int libvirtio_gphys_write(struct virtio_device *dev, uint64_t gpa, void *src, uint32_t len);

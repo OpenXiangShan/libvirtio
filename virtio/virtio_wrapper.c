@@ -8,6 +8,7 @@
 #include "virtio_net.h"
 #include "virtio_console.h"
 #include "virtio_gpu.h"
+#include "virtio_input.h"
 
 /*
  * Copyright (c) 2026 Beijing Institute of Open Source Chip (BOSC)
@@ -55,6 +56,18 @@ static struct virtio_wrapper_dev_info virtio_dev_info[] = {
 		virtio_gpu_emulator_create,
 		{ .class_code = 0x03, .subclass = 0x80,
 		  .device_cfg_len = sizeof(struct virtio_gpu_config) },
+	},
+	{
+		VIRTIO_EMU_NAME_KEYBOARD,
+		virtio_keyboard_emulator_create,
+		{ .class_code = 0x09, .subclass = 0x00,
+		  .device_cfg_len = sizeof(struct virtio_input_config) },
+	},
+	{
+		VIRTIO_EMU_NAME_MOUSE,
+		virtio_mouse_emulator_create,
+		{ .class_code = 0x09, .subclass = 0x02,
+		  .device_cfg_len = sizeof(struct virtio_input_config) },
 	},
 };
 
