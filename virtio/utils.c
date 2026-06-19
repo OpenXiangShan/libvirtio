@@ -293,6 +293,32 @@ int libvirtio_console_send(struct virtio_device *dev, void *buf, int len)
 	return mdev->ops->console_ops.send(buf, len, mdev->priv);
 }
 
+int libvirtio_gpu_submit_ctrl(struct virtio_device *dev, void *cmd,
+			      int cmd_len, void *resp, int resp_cap,
+			      int *resp_len)
+{
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
+
+	if (!mdev || !mdev->ops || !mdev->ops->gpu_ops.submit_ctrl)
+		return -1;
+
+	return mdev->ops->gpu_ops.submit_ctrl(cmd, cmd_len, resp, resp_cap,
+					      resp_len, mdev->priv);
+}
+
+int libvirtio_gpu_submit_cursor(struct virtio_device *dev, void *cmd,
+				int cmd_len, void *resp, int resp_cap,
+				int *resp_len)
+{
+	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);
+
+	if (!mdev || !mdev->ops || !mdev->ops->gpu_ops.submit_cursor)
+		return -1;
+
+	return mdev->ops->gpu_ops.submit_cursor(cmd, cmd_len, resp, resp_cap,
+						resp_len, mdev->priv);
+}
+
 int libvirtio_set_irq(struct virtio_device *dev)
 {
 	struct virtio_mmio_dev *mdev = container_of(dev, struct virtio_mmio_dev, dev);

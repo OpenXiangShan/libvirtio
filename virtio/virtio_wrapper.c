@@ -7,6 +7,7 @@
 #include "virtio_blk.h"
 #include "virtio_net.h"
 #include "virtio_console.h"
+#include "virtio_gpu.h"
 
 /*
  * Copyright (c) 2026 Beijing Institute of Open Source Chip (BOSC)
@@ -48,6 +49,12 @@ static struct virtio_wrapper_dev_info virtio_dev_info[] = {
 		virtio_console_emulator_create,
 		{ .class_code = 0x07, .subclass = 0x80,
 		  .device_cfg_len = sizeof(struct virtio_console_config) },
+	},
+	{
+		VIRTIO_EMU_NAME_GPU,
+		virtio_gpu_emulator_create,
+		{ .class_code = 0x03, .subclass = 0x80,
+		  .device_cfg_len = sizeof(struct virtio_gpu_config) },
 	},
 };
 

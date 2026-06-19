@@ -63,6 +63,16 @@ int libvirtio_net_set_mac(struct virtio_device *dev, uint8_t *mac);
 int libvirtio_console_send(struct virtio_device *dev, void *buf, int len);
 #define my_console_send         libvirtio_console_send
 
+/* virtio gpu ops */
+int libvirtio_gpu_submit_ctrl(struct virtio_device *dev, void *cmd,
+			      int cmd_len, void *resp, int resp_cap,
+			      int *resp_len);
+int libvirtio_gpu_submit_cursor(struct virtio_device *dev, void *cmd,
+				int cmd_len, void *resp, int resp_cap,
+				int *resp_len);
+#define my_gpu_submit_ctrl      libvirtio_gpu_submit_ctrl
+#define my_gpu_submit_cursor    libvirtio_gpu_submit_cursor
+
 /* generic ops */
 int libvirtio_gphys_read(struct virtio_device *dev, uint64_t gpa, void *dst, uint32_t len);
 int libvirtio_gphys_write(struct virtio_device *dev, uint64_t gpa, void *src, uint32_t len);

@@ -111,6 +111,17 @@
 #define VMM_VIRTIO_MMIO_QUEUE_USED_LOW		0x0a0
 #define VMM_VIRTIO_MMIO_QUEUE_USED_HIGH		0x0a4
 
+/* Shared memory region id */
+#define VMM_VIRTIO_MMIO_SHM_SEL		0x0ac
+
+/* Shared memory region length, 64 bits in two halves */
+#define VMM_VIRTIO_MMIO_SHM_LEN_LOW		0x0b0
+#define VMM_VIRTIO_MMIO_SHM_LEN_HIGH		0x0b4
+
+/* Shared memory region base address, 64 bits in two halves */
+#define VMM_VIRTIO_MMIO_SHM_BASE_LOW		0x0b8
+#define VMM_VIRTIO_MMIO_SHM_BASE_HIGH		0x0bc
+
 /* Configuration atomicity value */
 #define VMM_VIRTIO_MMIO_CONFIG_GENERATION	0x0fc
 

@@ -69,6 +69,9 @@ virtio_backend_create(const struct virtio_backend_config *config)
 	case VIRTIO_BACKEND_CONSOLE:
 		ret = virtio_backend_console_create(backend, config);
 		break;
+	case VIRTIO_BACKEND_GPU:
+		ret = virtio_backend_gpu_create(backend, config);
+		break;
 	default:
 		ret = -EINVAL;
 		break;

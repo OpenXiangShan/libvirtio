@@ -95,6 +95,14 @@ static int virtio_mmio_config_read(struct virtio_mmio_dev *mdev,
 		*(u32 *)dst = mdev->dev.emu->get_size_vq(&mdev->dev,
 					      mdev->config.queue_sel);
 		break;
+	case VMM_VIRTIO_MMIO_SHM_LEN_LOW:
+	case VMM_VIRTIO_MMIO_SHM_LEN_HIGH:
+		*(u32 *)dst = UINT_MAX;
+		break;
+	case VMM_VIRTIO_MMIO_SHM_BASE_LOW:
+	case VMM_VIRTIO_MMIO_SHM_BASE_HIGH:
+		*(u32 *)dst = 0;
+		break;
 	case VMM_VIRTIO_MMIO_STATUS:
 		*(u32 *)dst = *((u32 *)((void *)&mdev->config.status));
 		break;
@@ -156,6 +164,8 @@ static int virtio_mmio_config_write(struct virtio_mmio_dev *mdev,
 	case VMM_VIRTIO_MMIO_QUEUE_NOTIFY:
 		if (!mdev->dev.emu->notify_vq(&mdev->dev, val))
 			*is_doorbell = 1;
+		break;
+	case VMM_VIRTIO_MMIO_SHM_SEL:
 		break;
 	case VMM_VIRTIO_MMIO_INTERRUPT_ACK:
 		mdev->config.interrupt_state &= ~val;
