@@ -11,12 +11,15 @@
 
 #define VIRTIO_BACKEND_UI_INPUT_QUEUE_DEPTH 1024
 #define VIRTIO_BACKEND_UI_DEFAULT_LISTEN "127.0.0.1:5915"
+#define VIRTIO_BACKEND_UI_ABS_MIN 0
+#define VIRTIO_BACKEND_UI_ABS_MAX 0x7fff
 
 struct virtio_backend_ui_vnc {
 	struct virtio_backend_ui base;
 	rfbScreenInfoPtr screen;
 	struct virtio_backend_queue keyboardq;
 	struct virtio_backend_queue mouseq;
+	struct virtio_backend_queue tabletq;
 	pthread_mutex_t lock;
 	uint8_t *fb;
 	uint32_t width;
@@ -167,6 +170,8 @@ input_queue_for_profile(struct virtio_backend_ui_vnc *vnc,
 		return &vnc->keyboardq;
 	case VIRTIO_BACKEND_INPUT_MOUSE:
 		return &vnc->mouseq;
+	case VIRTIO_BACKEND_INPUT_TABLET:
+		return &vnc->tabletq;
 	default:
 		return NULL;
 	}
@@ -210,14 +215,33 @@ static void vnc_kbd_event(rfbBool down, rfbKeySym key, rfbClientPtr client)
 }
 
 static void queue_button_change(struct virtio_backend_ui_vnc *vnc, int old_mask,
+				enum virtio_backend_input_profile profile,
 				int new_mask, int bit, uint16_t code)
 {
+	struct virtio_backend_queue *queue = input_queue_for_profile(vnc,
+								     profile);
 	int old_down = !!(old_mask & bit);
 	int new_down = !!(new_mask & bit);
 
+	if (!queue)
+		return;
 	if (old_down != new_down)
-		(void)queue_input_event(vnc, VIRTIO_BACKEND_INPUT_MOUSE,
-					EV_KEY, code, new_down ? 1 : 0);
+		(void)queue_input_event(vnc, profile, EV_KEY, code,
+					new_down ? 1 : 0);
+}
+
+static int vnc_abs_from_coord(int coord, uint32_t size)
+{
+	if (coord < 0)
+		coord = 0;
+	if (!size)
+		return VIRTIO_BACKEND_UI_ABS_MIN;
+	if (coord >= (int)size)
+		coord = (int)size - 1;
+	if (size <= 1)
+		return VIRTIO_BACKEND_UI_ABS_MIN;
+	return (int)((uint64_t)coord * VIRTIO_BACKEND_UI_ABS_MAX /
+		     (size - 1));
 }
 
 static void vnc_ptr_event(int button_mask, int x, int y, rfbClientPtr client)
@@ -226,6 +250,8 @@ static void vnc_ptr_event(int button_mask, int x, int y, rfbClientPtr client)
 	int old_buttons = vnc->buttons;
 	int dx = 0;
 	int dy = 0;
+	int abs_x;
+	int abs_y;
 
 	if (vnc->pointer_initialized) {
 		dx = x - vnc->last_x;
@@ -243,9 +269,12 @@ static void vnc_ptr_event(int button_mask, int x, int y, rfbClientPtr client)
 	if (dy)
 		(void)queue_input_event(vnc, VIRTIO_BACKEND_INPUT_MOUSE,
 					EV_REL, REL_Y, dy);
-	queue_button_change(vnc, old_buttons, button_mask, 1, BTN_LEFT);
-	queue_button_change(vnc, old_buttons, button_mask, 2, BTN_MIDDLE);
-	queue_button_change(vnc, old_buttons, button_mask, 4, BTN_RIGHT);
+	queue_button_change(vnc, old_buttons, VIRTIO_BACKEND_INPUT_MOUSE,
+			    button_mask, 1, BTN_LEFT);
+	queue_button_change(vnc, old_buttons, VIRTIO_BACKEND_INPUT_MOUSE,
+			    button_mask, 2, BTN_MIDDLE);
+	queue_button_change(vnc, old_buttons, VIRTIO_BACKEND_INPUT_MOUSE,
+			    button_mask, 4, BTN_RIGHT);
 	if (button_mask & 8)
 		(void)queue_input_event(vnc, VIRTIO_BACKEND_INPUT_MOUSE,
 					EV_REL, REL_WHEEL, 1);
@@ -253,6 +282,26 @@ static void vnc_ptr_event(int button_mask, int x, int y, rfbClientPtr client)
 		(void)queue_input_event(vnc, VIRTIO_BACKEND_INPUT_MOUSE,
 					EV_REL, REL_WHEEL, -1);
 	queue_syn(vnc, VIRTIO_BACKEND_INPUT_MOUSE);
+
+	abs_x = vnc_abs_from_coord(x, vnc->width);
+	abs_y = vnc_abs_from_coord(y, vnc->height);
+	(void)queue_input_event(vnc, VIRTIO_BACKEND_INPUT_TABLET,
+				EV_ABS, ABS_X, abs_x);
+	(void)queue_input_event(vnc, VIRTIO_BACKEND_INPUT_TABLET,
+				EV_ABS, ABS_Y, abs_y);
+	queue_button_change(vnc, old_buttons, VIRTIO_BACKEND_INPUT_TABLET,
+			    button_mask, 1, BTN_LEFT);
+	queue_button_change(vnc, old_buttons, VIRTIO_BACKEND_INPUT_TABLET,
+			    button_mask, 2, BTN_MIDDLE);
+	queue_button_change(vnc, old_buttons, VIRTIO_BACKEND_INPUT_TABLET,
+			    button_mask, 4, BTN_RIGHT);
+	if (button_mask & 8)
+		(void)queue_input_event(vnc, VIRTIO_BACKEND_INPUT_TABLET,
+					EV_REL, REL_WHEEL, 1);
+	if (button_mask & 16)
+		(void)queue_input_event(vnc, VIRTIO_BACKEND_INPUT_TABLET,
+					EV_REL, REL_WHEEL, -1);
+	queue_syn(vnc, VIRTIO_BACKEND_INPUT_TABLET);
 }
 
 static int vnc_ui_resize_locked(struct virtio_backend_ui_vnc *vnc,
@@ -370,12 +419,14 @@ static void vnc_ui_destroy(void *opaque)
 		return;
 	virtio_backend_queue_stop(&vnc->keyboardq);
 	virtio_backend_queue_stop(&vnc->mouseq);
+	virtio_backend_queue_stop(&vnc->tabletq);
 	if (vnc->screen) {
 		rfbShutdownServer(vnc->screen, TRUE);
 		rfbScreenCleanup(vnc->screen);
 	}
 	virtio_backend_queue_destroy(&vnc->keyboardq);
 	virtio_backend_queue_destroy(&vnc->mouseq);
+	virtio_backend_queue_destroy(&vnc->tabletq);
 	if (vnc->lock_initialized)
 		pthread_mutex_destroy(&vnc->lock);
 	free(vnc->fb);
@@ -429,6 +480,10 @@ int virtio_backend_ui_vnc_create(virtio_backend_ui_handle_t *handle,
 	if (ret < 0)
 		goto fail;
 	ret = virtio_backend_queue_init(&vnc->mouseq,
+					VIRTIO_BACKEND_UI_INPUT_QUEUE_DEPTH);
+	if (ret < 0)
+		goto fail;
+	ret = virtio_backend_queue_init(&vnc->tabletq,
 					VIRTIO_BACKEND_UI_INPUT_QUEUE_DEPTH);
 	if (ret < 0)
 		goto fail;

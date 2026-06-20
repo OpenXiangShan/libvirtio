@@ -100,6 +100,17 @@ static int mouse_rel_code_allowed(uint16_t code)
 	       code == REL_WHEEL;
 }
 
+static int tablet_abs_code_allowed(uint16_t code)
+{
+	return code == ABS_X ||
+	       code == ABS_Y;
+}
+
+static int tablet_rel_code_allowed(uint16_t code)
+{
+	return code == REL_WHEEL;
+}
+
 static int input_event_allowed(struct virtio_backend_input *input,
 			       const struct input_event *event)
 {
@@ -115,6 +126,13 @@ static int input_event_allowed(struct virtio_backend_input *input,
 			mouse_key_code_allowed(event->code)) ||
 		       (event->type == EV_REL &&
 			mouse_rel_code_allowed(event->code));
+	case VIRTIO_BACKEND_INPUT_TABLET:
+		return (event->type == EV_KEY &&
+			mouse_key_code_allowed(event->code)) ||
+		       (event->type == EV_REL &&
+			tablet_rel_code_allowed(event->code)) ||
+		       (event->type == EV_ABS &&
+			tablet_abs_code_allowed(event->code));
 	default:
 		return 0;
 	}
@@ -143,10 +161,13 @@ static int evdev_has_cap(int fd, enum virtio_backend_input_profile profile)
 			       (8 * sizeof(unsigned long))];
 	unsigned long rel_bits[(REL_MAX + 8 * sizeof(unsigned long)) /
 			       (8 * sizeof(unsigned long))];
+	unsigned long abs_bits[(ABS_MAX + 8 * sizeof(unsigned long)) /
+			       (8 * sizeof(unsigned long))];
 
 	memset(ev_bits, 0, sizeof(ev_bits));
 	memset(key_bits, 0, sizeof(key_bits));
 	memset(rel_bits, 0, sizeof(rel_bits));
+	memset(abs_bits, 0, sizeof(abs_bits));
 
 	if (ioctl(fd, EVIOCGBIT(0, sizeof(ev_bits)), ev_bits) < 0)
 		return 0;
@@ -160,6 +181,14 @@ static int evdev_has_cap(int fd, enum virtio_backend_input_profile profile)
 		return test_bit(key_bits, KEY_A) ||
 		       test_bit(key_bits, KEY_ENTER) ||
 		       test_bit(key_bits, KEY_ESC);
+	}
+
+	if (profile == VIRTIO_BACKEND_INPUT_TABLET) {
+		return test_bit(ev_bits, EV_ABS) &&
+		       ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(abs_bits)),
+			     abs_bits) >= 0 &&
+		       test_bit(abs_bits, ABS_X) &&
+		       test_bit(abs_bits, ABS_Y);
 	}
 
 	if (profile != VIRTIO_BACKEND_INPUT_MOUSE)
@@ -558,6 +587,7 @@ int virtio_backend_input_create(struct virtio_backend *backend,
 	switch (config->u.input.profile) {
 	case VIRTIO_BACKEND_INPUT_KEYBOARD:
 	case VIRTIO_BACKEND_INPUT_MOUSE:
+	case VIRTIO_BACKEND_INPUT_TABLET:
 		break;
 	default:
 		return -EINVAL;

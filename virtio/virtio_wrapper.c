@@ -69,6 +69,12 @@ static struct virtio_wrapper_dev_info virtio_dev_info[] = {
 		{ .class_code = 0x09, .subclass = 0x02,
 		  .device_cfg_len = sizeof(struct virtio_input_config) },
 	},
+	{
+		VIRTIO_EMU_NAME_TABLET,
+		virtio_tablet_emulator_create,
+		{ .class_code = 0x09, .subclass = 0x02,
+		  .device_cfg_len = sizeof(struct virtio_input_config) },
+	},
 };
 
 #define VIRTIO_DEV_INFO_CNT (sizeof(virtio_dev_info) / sizeof(virtio_dev_info[0]))

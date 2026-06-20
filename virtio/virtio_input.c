@@ -21,6 +21,7 @@
 #define EV_SYN 0x00
 #define EV_KEY 0x01
 #define EV_REL 0x02
+#define EV_ABS 0x03
 #define EV_LED 0x11
 #define EV_REP 0x14
 
@@ -51,6 +52,13 @@
 #define REL_Y 0x01
 #define REL_WHEEL 0x08
 
+#define ABS_X 0x00
+#define ABS_Y 0x01
+#define INPUT_ABS_MIN 0x0000
+#define INPUT_ABS_MAX 0x7fff
+
+#define INPUT_PROP_POINTER 0x00
+
 #define LED_NUML 0x00
 #define LED_CAPSL 0x01
 #define LED_SCROLLL 0x02
@@ -58,6 +66,7 @@
 enum virtio_input_profile {
 	VIRTIO_INPUT_PROFILE_KEYBOARD,
 	VIRTIO_INPUT_PROFILE_MOUSE,
+	VIRTIO_INPUT_PROFILE_TABLET,
 };
 
 struct virtio_input_queue {
@@ -185,6 +194,48 @@ static void virtio_input_config_string(struct virtio_input_config *config,
 	config->size = (uint8_t)len;
 }
 
+static const char *virtio_input_profile_name(enum virtio_input_profile profile)
+{
+	switch (profile) {
+	case VIRTIO_INPUT_PROFILE_KEYBOARD:
+		return "my-virtio-keyboard";
+	case VIRTIO_INPUT_PROFILE_MOUSE:
+		return "my-virtio-mouse";
+	case VIRTIO_INPUT_PROFILE_TABLET:
+		return "my-virtio-tablet";
+	default:
+		return "my-virtio-input";
+	}
+}
+
+static const char *virtio_input_profile_serial(enum virtio_input_profile profile)
+{
+	switch (profile) {
+	case VIRTIO_INPUT_PROFILE_KEYBOARD:
+		return "my-virtio-keyboard-0";
+	case VIRTIO_INPUT_PROFILE_MOUSE:
+		return "my-virtio-mouse-0";
+	case VIRTIO_INPUT_PROFILE_TABLET:
+		return "my-virtio-tablet-0";
+	default:
+		return "my-virtio-input-0";
+	}
+}
+
+static uint16_t virtio_input_profile_product(enum virtio_input_profile profile)
+{
+	switch (profile) {
+	case VIRTIO_INPUT_PROFILE_KEYBOARD:
+		return 0x0001;
+	case VIRTIO_INPUT_PROFILE_MOUSE:
+		return 0x0002;
+	case VIRTIO_INPUT_PROFILE_TABLET:
+		return 0x0003;
+	default:
+		return 0x0000;
+	}
+}
+
 static void virtio_input_build_keyboard_bits(struct virtio_input_config *config)
 {
 	uint8_t size = 0;
@@ -206,6 +257,15 @@ static void virtio_input_build_keyboard_bits(struct virtio_input_config *config)
 	config->size = size;
 }
 
+static void virtio_input_build_button_bits(struct virtio_input_config *config)
+{
+	virtio_input_bitmap_set(config->u.bitmap, BTN_LEFT, &config->size);
+	virtio_input_bitmap_set(config->u.bitmap, BTN_RIGHT, &config->size);
+	virtio_input_bitmap_set(config->u.bitmap, BTN_MIDDLE, &config->size);
+	virtio_input_bitmap_set(config->u.bitmap, BTN_SIDE, &config->size);
+	virtio_input_bitmap_set(config->u.bitmap, BTN_EXTRA, &config->size);
+}
+
 static void virtio_input_build_config(struct virtio_input_dev *idev,
 				      uint8_t select, uint8_t subsel,
 				      struct virtio_input_config *config)
@@ -214,19 +274,12 @@ static void virtio_input_build_config(struct virtio_input_dev *idev,
 
 	switch (select) {
 	case VIRTIO_INPUT_CFG_ID_NAME:
-		if (idev->profile == VIRTIO_INPUT_PROFILE_KEYBOARD) {
-			virtio_input_config_string(config, select,
-						   "my-virtio-keyboard");
-		} else {
-			virtio_input_config_string(config, select,
-						   "my-virtio-mouse");
-		}
+		virtio_input_config_string(config, select,
+					   virtio_input_profile_name(idev->profile));
 		break;
 	case VIRTIO_INPUT_CFG_ID_SERIAL:
 		virtio_input_config_string(config, select,
-					   idev->profile == VIRTIO_INPUT_PROFILE_KEYBOARD ?
-					   "my-virtio-keyboard-0" :
-					   "my-virtio-mouse-0");
+					   virtio_input_profile_serial(idev->profile));
 		break;
 	case VIRTIO_INPUT_CFG_ID_DEVIDS:
 		config->select = select;
@@ -234,9 +287,18 @@ static void virtio_input_build_config(struct virtio_input_dev *idev,
 		config->u.ids.bustype = BUS_VIRTUAL;
 		config->u.ids.vendor = 0x5253;
 		config->u.ids.product =
-			idev->profile == VIRTIO_INPUT_PROFILE_KEYBOARD ?
-			0x0001 : 0x0002;
+			virtio_input_profile_product(idev->profile);
 		config->u.ids.version = 0x0001;
+		break;
+	case VIRTIO_INPUT_CFG_PROP_BITS:
+		config->select = select;
+		config->subsel = subsel;
+		if (idev->profile == VIRTIO_INPUT_PROFILE_TABLET)
+			virtio_input_bitmap_set(config->u.bitmap,
+						INPUT_PROP_POINTER,
+						&config->size);
+		if (!config->size)
+			memset(config, 0, sizeof(*config));
 		break;
 	case VIRTIO_INPUT_CFG_EV_BITS:
 		config->select = select;
@@ -256,27 +318,39 @@ static void virtio_input_build_config(struct virtio_input_dev *idev,
 			}
 		} else {
 			if (subsel == EV_KEY) {
-				virtio_input_bitmap_set(config->u.bitmap,
-							BTN_LEFT, &config->size);
-				virtio_input_bitmap_set(config->u.bitmap,
-							BTN_RIGHT, &config->size);
-				virtio_input_bitmap_set(config->u.bitmap,
-							BTN_MIDDLE, &config->size);
-				virtio_input_bitmap_set(config->u.bitmap,
-							BTN_SIDE, &config->size);
-				virtio_input_bitmap_set(config->u.bitmap,
-							BTN_EXTRA, &config->size);
-			} else if (subsel == EV_REL) {
+				virtio_input_build_button_bits(config);
+			} else if (idev->profile == VIRTIO_INPUT_PROFILE_MOUSE &&
+				   subsel == EV_REL) {
 				virtio_input_bitmap_set(config->u.bitmap,
 							REL_X, &config->size);
 				virtio_input_bitmap_set(config->u.bitmap,
 							REL_Y, &config->size);
 				virtio_input_bitmap_set(config->u.bitmap,
 							REL_WHEEL, &config->size);
+			} else if (idev->profile == VIRTIO_INPUT_PROFILE_TABLET &&
+				   subsel == EV_REL) {
+				virtio_input_bitmap_set(config->u.bitmap,
+							REL_WHEEL, &config->size);
+			} else if (idev->profile == VIRTIO_INPUT_PROFILE_TABLET &&
+				   subsel == EV_ABS) {
+				virtio_input_bitmap_set(config->u.bitmap,
+							ABS_X, &config->size);
+				virtio_input_bitmap_set(config->u.bitmap,
+							ABS_Y, &config->size);
 			}
 		}
 		if (!config->size)
 			memset(config, 0, sizeof(*config));
+		break;
+	case VIRTIO_INPUT_CFG_ABS_INFO:
+		if (idev->profile == VIRTIO_INPUT_PROFILE_TABLET &&
+		    (subsel == ABS_X || subsel == ABS_Y)) {
+			config->select = select;
+			config->subsel = subsel;
+			config->size = sizeof(config->u.abs);
+			config->u.abs.min = INPUT_ABS_MIN;
+			config->u.abs.max = INPUT_ABS_MAX;
+		}
 		break;
 	default:
 		break;
@@ -457,6 +531,12 @@ static int virtio_mouse_connect(struct virtio_device *dev,
 	return virtio_input_connect_profile(dev, VIRTIO_INPUT_PROFILE_MOUSE);
 }
 
+static int virtio_tablet_connect(struct virtio_device *dev,
+				 struct virtio_emulator *emu)
+{
+	return virtio_input_connect_profile(dev, VIRTIO_INPUT_PROFILE_TABLET);
+}
+
 static void virtio_input_disconnect(struct virtio_device *dev)
 {
 	struct virtio_input_dev *idev = dev->emu_data;
@@ -515,6 +595,27 @@ static struct virtio_emulator virtio_mouse = {
 	.disconnect = virtio_input_disconnect,
 };
 
+static struct virtio_emulator virtio_tablet = {
+	.name = VIRTIO_EMU_NAME_TABLET,
+	.id_table = virtio_input_emu_id,
+
+	.get_host_features = virtio_input_get_host_features,
+	.set_guest_features = virtio_input_set_guest_features,
+	.init_vq = virtio_input_init_vq,
+	.init_vq_addr = virtio_input_init_vq_addr,
+	.get_pfn_vq = virtio_input_get_pfn_vq,
+	.get_size_vq = virtio_input_get_size_vq,
+	.set_size_vq = virtio_input_set_size_vq,
+	.notify_vq = virtio_input_notify_vq,
+	.status_changed = virtio_input_status_changed,
+
+	.read_config = virtio_input_read_config,
+	.write_config = virtio_input_write_config,
+	.reset = virtio_input_reset,
+	.connect = virtio_tablet_connect,
+	.disconnect = virtio_input_disconnect,
+};
+
 struct virtio_emulator *virtio_keyboard_emulator_create(void)
 {
 	return &virtio_keyboard;
@@ -523,4 +624,9 @@ struct virtio_emulator *virtio_keyboard_emulator_create(void)
 struct virtio_emulator *virtio_mouse_emulator_create(void)
 {
 	return &virtio_mouse;
+}
+
+struct virtio_emulator *virtio_tablet_emulator_create(void)
+{
+	return &virtio_tablet;
 }

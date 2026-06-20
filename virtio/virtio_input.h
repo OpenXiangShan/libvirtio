@@ -51,5 +51,6 @@ struct virtio_input_event {
 
 struct virtio_emulator *virtio_keyboard_emulator_create(void);
 struct virtio_emulator *virtio_mouse_emulator_create(void);
+struct virtio_emulator *virtio_tablet_emulator_create(void);
 
 #endif
