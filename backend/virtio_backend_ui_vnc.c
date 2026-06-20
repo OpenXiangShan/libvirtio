@@ -32,6 +32,17 @@ struct virtio_backend_ui_vnc {
 	int buttons;
 };
 
+static void vnc_hide_cursor(struct virtio_backend_ui_vnc *vnc)
+{
+	char cursor[] = " ";
+	char mask[] = " ";
+	rfbCursorPtr hidden;
+
+	hidden = rfbMakeXCursor(1, 1, cursor, mask);
+	if (hidden)
+		rfbSetCursor(vnc->screen, hidden);
+}
+
 static int parse_vnc_listen(const char *listen, char **host, int *port)
 {
 	const char *spec = listen && *listen ? listen :
@@ -541,6 +552,7 @@ int virtio_backend_ui_create(struct virtio_backend *backend,
 	vnc->screen->listenInterface = listen_addr;
 	vnc->screen->deferUpdateTime = 5;
 	rfbInitServer(vnc->screen);
+	vnc_hide_cursor(vnc);
 	rfbRunEventLoop(vnc->screen, 10000, TRUE);
 
 	free(host);
