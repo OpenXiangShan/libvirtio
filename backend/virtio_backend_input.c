@@ -28,7 +28,7 @@ struct virtio_backend_input {
 	struct virtio_backend_queue eventq;
 	enum virtio_backend_input_profile profile;
 	enum virtio_backend_input_source source;
-	virtio_backend_ui_handle_t ui;
+	virtio_backend_handle_t ui;
 	uint8_t led_state;
 	struct virtio_backend_input_fd evdev[VIRTIO_BACKEND_INPUT_MAX_EVDEV_FDS];
 	unsigned int evdev_count;

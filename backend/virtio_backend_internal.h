@@ -65,21 +65,20 @@ struct virtio_backend {
 
 char *virtio_backend_strdup(const char *s);
 
-int virtio_backend_ui_update(virtio_backend_ui_handle_t handle,
+int virtio_backend_ui_update(virtio_backend_handle_t handle,
 			     const void *pixels, uint32_t width,
 			     uint32_t height, uint32_t stride, uint32_t x,
 			     uint32_t y, uint32_t w, uint32_t h);
 
-void virtio_backend_ui_disable(virtio_backend_ui_handle_t handle);
+void virtio_backend_ui_disable(virtio_backend_handle_t handle);
 
-int virtio_backend_ui_read_input(virtio_backend_ui_handle_t handle,
+int virtio_backend_ui_read_input(virtio_backend_handle_t handle,
 				 enum virtio_backend_input_profile profile,
 				 struct virtio_backend_input_event *event,
 				 int block);
 
-int virtio_backend_ui_vnc_create(virtio_backend_ui_handle_t *handle,
-				 const char *listen, uint32_t width,
-				 uint32_t height);
+int virtio_backend_ui_create(struct virtio_backend *backend,
+			     const struct virtio_backend_config *config);
 
 void virtio_backend_log(struct virtio_backend *backend, int level,
 			const char *fmt, ...);

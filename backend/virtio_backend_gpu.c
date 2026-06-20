@@ -40,7 +40,7 @@ struct virtio_backend_gpu {
 	uint32_t width;
 	uint32_t height;
 	uint32_t max_outputs;
-	virtio_backend_ui_handle_t ui;
+	virtio_backend_handle_t ui;
 	struct virtio_backend_gpu_resource *resources;
 	struct virtio_backend_gpu_scanout scanouts[VIRTIO_GPU_MAX_SCANOUTS];
 	int (*guest_read)(void *opaque, uint64_t gpa, void *dst, uint32_t len);

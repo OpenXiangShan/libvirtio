@@ -75,6 +75,9 @@ virtio_backend_create(const struct virtio_backend_config *config)
 	case VIRTIO_BACKEND_INPUT:
 		ret = virtio_backend_input_create(backend, config);
 		break;
+	case VIRTIO_BACKEND_UI:
+		ret = virtio_backend_ui_create(backend, config);
+		break;
 	default:
 		ret = -EINVAL;
 		break;
@@ -91,55 +94,44 @@ virtio_backend_create(const struct virtio_backend_config *config)
 	return backend;
 }
 
-virtio_backend_ui_handle_t
-virtio_backend_ui_create_vnc(const char *listen, uint32_t width,
-			     uint32_t height)
+static struct virtio_backend_ui *
+virtio_backend_get_ui(virtio_backend_handle_t handle)
 {
-	virtio_backend_ui_handle_t handle = NULL;
+	struct virtio_backend *backend = handle;
 
-	if (virtio_backend_ui_vnc_create(&handle, listen, width, height) < 0)
+	if (!backend || backend->type != VIRTIO_BACKEND_UI)
 		return NULL;
 
-	return handle;
+	return backend->dev;
 }
 
-void virtio_backend_ui_destroy(virtio_backend_ui_handle_t handle)
-{
-	struct virtio_backend_ui *ui = handle;
-
-	if (!ui)
-		return;
-	if (ui->ops && ui->ops->destroy)
-		ui->ops->destroy(ui);
-}
-
-int virtio_backend_ui_update(virtio_backend_ui_handle_t handle,
+int virtio_backend_ui_update(virtio_backend_handle_t handle,
 			     const void *pixels, uint32_t width,
 			     uint32_t height, uint32_t stride, uint32_t x,
 			     uint32_t y, uint32_t w, uint32_t h)
 {
-	struct virtio_backend_ui *ui = handle;
+	struct virtio_backend_ui *ui = virtio_backend_get_ui(handle);
 
 	if (!ui || !ui->ops || !ui->ops->update)
 		return -ENOTSUP;
 	return ui->ops->update(ui, pixels, width, height, stride, x, y, w, h);
 }
 
-void virtio_backend_ui_disable(virtio_backend_ui_handle_t handle)
+void virtio_backend_ui_disable(virtio_backend_handle_t handle)
 {
-	struct virtio_backend_ui *ui = handle;
+	struct virtio_backend_ui *ui = virtio_backend_get_ui(handle);
 
 	if (!ui || !ui->ops || !ui->ops->disable)
 		return;
 	ui->ops->disable(ui);
 }
 
-int virtio_backend_ui_read_input(virtio_backend_ui_handle_t handle,
+int virtio_backend_ui_read_input(virtio_backend_handle_t handle,
 				 enum virtio_backend_input_profile profile,
 				 struct virtio_backend_input_event *event,
 				 int block)
 {
-	struct virtio_backend_ui *ui = handle;
+	struct virtio_backend_ui *ui = virtio_backend_get_ui(handle);
 
 	if (!ui || !ui->ops || !ui->ops->read_input)
 		return -ENOTSUP;

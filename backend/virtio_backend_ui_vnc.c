@@ -440,9 +440,25 @@ static const struct virtio_backend_ui_ops vnc_ui_ops = {
 	.destroy = vnc_ui_destroy,
 };
 
-int virtio_backend_ui_vnc_create(virtio_backend_ui_handle_t *handle,
-				 const char *listen, uint32_t width,
-				 uint32_t height)
+static void virtio_backend_ui_destroy_backend(struct virtio_backend *backend)
+{
+	struct virtio_backend_ui *ui;
+
+	if (!backend)
+		return;
+
+	ui = backend->dev;
+	if (ui && ui->ops && ui->ops->destroy)
+		ui->ops->destroy(ui);
+	backend->dev = NULL;
+}
+
+static const struct virtio_backend_ops virtio_backend_ui_backend_ops = {
+	.destroy = virtio_backend_ui_destroy_backend,
+};
+
+int virtio_backend_ui_create(struct virtio_backend *backend,
+			     const struct virtio_backend_config *config)
 {
 	struct virtio_backend_ui_vnc *vnc;
 	char *host = NULL;
@@ -451,10 +467,16 @@ int virtio_backend_ui_vnc_create(virtio_backend_ui_handle_t *handle,
 	char *argv[] = { (char *)"my-virtio-vnc", NULL };
 	int port = 0;
 	int ret;
+	const char *listen;
+	uint32_t width;
+	uint32_t height;
 
-	if (!handle)
+	if (!backend || !config)
 		return -EINVAL;
-	*handle = NULL;
+
+	listen = config->u.ui.listen;
+	width = config->u.ui.width;
+	height = config->u.ui.height;
 
 	ret = parse_vnc_listen(listen, &host, &port);
 	if (ret < 0)
@@ -522,7 +544,8 @@ int virtio_backend_ui_vnc_create(virtio_backend_ui_handle_t *handle,
 	rfbRunEventLoop(vnc->screen, 10000, TRUE);
 
 	free(host);
-	*handle = vnc;
+	backend->dev = vnc;
+	backend->ops = &virtio_backend_ui_backend_ops;
 	return 0;
 
 fail:
