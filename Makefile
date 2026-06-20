@@ -6,6 +6,7 @@ SLIRP_CFLAGS := $(shell pkg-config --cflags slirp 2>/dev/null)
 LIBVNCSERVER_DIR := third_party/libvncserver
 LIBVNCSERVER_BUILD_DIR := build/libvncserver
 LIBVNCSERVER_ARCHIVE := $(LIBVNCSERVER_BUILD_DIR)/libvncserver.a
+ZLIB_ARCHIVE := $(shell $(CC) -print-file-name=libz.a)
 BACKEND_MRI := build/libMyVirtio_backend.mri
 LIBVNCSERVER_CFLAGS := -I$(LIBVNCSERVER_DIR)/include -I$(LIBVNCSERVER_BUILD_DIR)/include
 LIBVNCSERVER_CMAKE_FLAGS := \
@@ -19,7 +20,7 @@ LIBVNCSERVER_CMAKE_FLAGS := \
 	-DWITH_THREADS=ON \
 	-DWITH_24BPP=ON \
 	-DWITH_IPv6=ON \
-	-DWITH_ZLIB=OFF \
+	-DWITH_ZLIB=ON \
 	-DWITH_LZO=OFF \
 	-DWITH_JPEG=OFF \
 	-DWITH_PNG=OFF \
@@ -77,6 +78,7 @@ $(BACKEND_TARGET): $(BACKEND_OBJS) $(LIBVNCSERVER_ARCHIVE)
 		echo "CREATE $@"; \
 		for obj in $(BACKEND_OBJS); do echo "ADDMOD $$obj"; done; \
 		echo "ADDLIB $(abspath $(LIBVNCSERVER_ARCHIVE))"; \
+		echo "ADDLIB $(ZLIB_ARCHIVE)"; \
 		echo "SAVE"; \
 		echo "END"; \
 	} > $(BACKEND_MRI)
