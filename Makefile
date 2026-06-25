@@ -1,7 +1,7 @@
 CC := gcc
 AR := ar
 CMAKE := cmake
-CFLAGS := -Wall -g -O0
+CFLAGS := -Wall -g -O0 -std=gnu99
 GLIB_CFLAGS := $(shell pkg-config --cflags glib-2.0 2>/dev/null)
 LIBVNCSERVER_DIR := third_party/libvncserver
 LIBSLIRP_DIR := third_party/libslirp
