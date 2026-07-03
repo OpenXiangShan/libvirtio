@@ -49,6 +49,7 @@ BACKEND_CFLAGS := -Ibackend
 
 VIRTIO_SRCS := virtio/fifo.c virtio/utils.c virtio/virtio.c \
 	virtio/virtio_blk.c virtio/virtio_console.c virtio/virtio_mmio.c \
+	virtio/virtio_gbus.c \
 	virtio/virtio_net.c virtio/virtio_gpu.c virtio/virtio_input.c \
 	virtio/virtio_pci.c \
 	virtio/virtio_wrapper.c
