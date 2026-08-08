@@ -28,6 +28,7 @@ struct virtio_gbus_dev {
 	const struct virtio_gbus_ops *ops;
 	void *opaque;
 	bool valid;
+	uint32_t update_seq;
 	uint32_t status;
 	uint32_t driver_features[2];
 	uint32_t guest_page_size;
@@ -235,12 +236,21 @@ int virtio_gbus_poll(virtio_handle_t handle)
 	uint32_t page_size = 0;
 	uint32_t reset_seq = 0;
 	uint32_t status = 0;
+	uint32_t update_seq = 0;
 	bool force_reset = false;
 	bool page_size_changed = false;
 	int doorbell;
 
 	if (!gdev) {
 		return -1;
+	}
+
+	if (virtio_gbus_read_csr(gdev, VIRTIO_GBUS_CSR_UPDATE_SEQ,
+				 &update_seq) < 0) {
+		return -1;
+	}
+	if (gdev->valid && gdev->update_seq == update_seq) {
+		return 0;
 	}
 
 	if (virtio_gbus_read_csr(gdev, VIRTIO_GBUS_CSR_RESET_SEQ,
@@ -295,6 +305,7 @@ int virtio_gbus_poll(virtio_handle_t handle)
 				       notify_seq, page_size_changed);
 	}
 
+	gdev->update_seq = update_seq;
 	gdev->valid = true;
 	return 0;
 }
