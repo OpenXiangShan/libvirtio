@@ -15,7 +15,7 @@ module virtio_gbus_mmio_blk_top (
   output logic        interrupt,
   /* verilator lint_on SYMRSVDWORD */
 
-  input  logic [31:0] tosysbus_addr,
+  output logic [31:0] tosysbus_addr,
   output logic [31:0] tosysbus_data,
   input  logic        todut_en,
   input  logic [31:0] todut_addr,
@@ -26,8 +26,6 @@ module virtio_gbus_mmio_blk_top (
   localparam logic [31:0] VIRTIO_MMIO_VERSION     = 32'h0000_0001;
   localparam logic [31:0] VIRTIO_MMIO_DEVICE_ID   = 32'h0000_0002;
   localparam logic [31:0] VIRTIO_MMIO_VENDOR_ID   = 32'h5253_5658;
-  localparam logic [31:0] VIRTIO_GBUS_MAGIC       = 32'h7375_6267;
-  localparam logic [31:0] VIRTIO_GBUS_VERSION     = 32'h0000_0001;
 
   localparam logic [11:0] REG_MAGIC_VALUE         = 12'h000;
   localparam logic [11:0] REG_VERSION             = 12'h004;
@@ -52,7 +50,7 @@ module virtio_gbus_mmio_blk_top (
   localparam logic [11:0] REG_CONFIG              = 12'h100;
 
   localparam logic [31:0] GBUS_MAGIC              = 32'h0000;
-  localparam logic [31:0] GBUS_VERSION            = 32'h0004;
+  localparam logic [31:0] GBUS_MAGIC_VALUE        = 32'h7375_6267;
   localparam logic [31:0] GBUS_STATUS             = 32'h0010;
   localparam logic [31:0] GBUS_DRIVER_FEATURES_0  = 32'h0014;
   localparam logic [31:0] GBUS_DRIVER_FEATURES_1  = 32'h0018;
@@ -102,6 +100,10 @@ module virtio_gbus_mmio_blk_top (
   logic [31:0] queue_pfn_reg        [NUM_QUEUES];
   logic [31:0] queue_ready_reg      [NUM_QUEUES];
   logic [31:0] queue_notify_seq_reg [NUM_QUEUES];
+
+  logic        publish_pending_valid_reg;
+  logic [31:0] publish_pending_addr_reg;
+  logic [31:0] publish_pending_data_reg;
 
   assign ready = 1'b1;
   assign interrupt = interrupt_status_reg != 32'h0000_0000;
@@ -188,45 +190,6 @@ module virtio_gbus_mmio_blk_top (
     end
   endfunction
 
-  function automatic logic [31:0] gbus_word(input logic [31:0] csr_addr);
-    logic in_queue_window;
-    logic [1:0] q;
-    logic [31:0] qoff;
-    begin
-      gbus_word = 32'h0000_0000;
-      in_queue_window = (csr_addr >= GBUS_QUEUE_BASE) &&
-                        (csr_addr < (GBUS_QUEUE_BASE +
-                                     NUM_QUEUES * GBUS_QUEUE_STRIDE));
-      if (in_queue_window) begin
-        q = 2'((csr_addr - GBUS_QUEUE_BASE) / GBUS_QUEUE_STRIDE);
-        qoff = (csr_addr - GBUS_QUEUE_BASE) % GBUS_QUEUE_STRIDE;
-        unique case (qoff)
-          32'h00: gbus_word = queue_num_reg[q];
-          32'h04: gbus_word = queue_align_reg[q];
-          32'h08: gbus_word = queue_pfn_reg[q];
-          32'h0c: gbus_word = queue_ready_reg[q];
-          32'h10: gbus_word = queue_notify_seq_reg[q];
-          default: gbus_word = 32'h0000_0000;
-        endcase
-      end else begin
-        unique case (csr_addr)
-          GBUS_MAGIC:             gbus_word = VIRTIO_GBUS_MAGIC;
-          GBUS_VERSION:           gbus_word = VIRTIO_GBUS_VERSION;
-          GBUS_STATUS:            gbus_word = status_reg;
-          GBUS_DRIVER_FEATURES_0: gbus_word = driver_features_0_reg;
-          GBUS_DRIVER_FEATURES_1: gbus_word = driver_features_1_reg;
-          GBUS_GUEST_PAGE_SIZE:   gbus_word = guest_page_size_reg;
-          GBUS_RESET_SEQ:         gbus_word = reset_seq_reg;
-          GBUS_BLK_CAPACITY_LOW:  gbus_word = capacity_reg[31:0];
-          GBUS_BLK_CAPACITY_HIGH: gbus_word = capacity_reg[63:32];
-          GBUS_BLK_SEG_MAX:       gbus_word = seg_max_reg;
-          GBUS_BLK_SIZE:          gbus_word = blk_size_reg;
-          default:                gbus_word = 32'h0000_0000;
-        endcase
-      end
-    end
-  endfunction
-
   always_comb begin
     rdata = 32'h0000_0000;
     for (int i = 0; i < 4; i++) begin
@@ -236,7 +199,26 @@ module virtio_gbus_mmio_blk_top (
     end
   end
 
-  assign tosysbus_data = gbus_word(tosysbus_addr);
+  task automatic publish_sysbus(
+    input logic [31:0] csr_addr,
+    input logic [31:0] csr_data
+  );
+    begin
+      tosysbus_addr <= csr_addr;
+      tosysbus_data <= csr_data;
+    end
+  endtask
+
+  task automatic publish_sysbus_later(
+    input logic [31:0] csr_addr,
+    input logic [31:0] csr_data
+  );
+    begin
+      publish_pending_valid_reg <= 1'b1;
+      publish_pending_addr_reg <= csr_addr;
+      publish_pending_data_reg <= csr_data;
+    end
+  endtask
 
   task automatic clear_driver_state;
     begin
@@ -266,7 +248,20 @@ module virtio_gbus_mmio_blk_top (
       capacity_reg  <= 64'h0000_0000_0000_0000;
       seg_max_reg   <= BLK_SEG_MAX_DEFAULT;
       blk_size_reg  <= BLK_SIZE_DEFAULT;
+      tosysbus_addr <= GBUS_MAGIC;
+      tosysbus_data <= GBUS_MAGIC_VALUE;
+      publish_pending_valid_reg <= 1'b0;
+      publish_pending_addr_reg <= 32'h0000_0000;
+      publish_pending_data_reg <= 32'h0000_0000;
     end else begin
+      tosysbus_addr <= GBUS_MAGIC;
+      tosysbus_data <= GBUS_MAGIC_VALUE;
+      if (publish_pending_valid_reg) begin
+        publish_sysbus(publish_pending_addr_reg,
+                       publish_pending_data_reg);
+        publish_pending_valid_reg <= 1'b0;
+      end
+
       if (valid && write && addr[11:0] < REG_CONFIG) begin
         logic [11:0] reg_addr;
         logic [31:0] old_word;
@@ -292,38 +287,62 @@ module virtio_gbus_mmio_blk_top (
           REG_DRIVER_FEATURES: begin
             if (driver_features_sel_reg == 32'd0) begin
               driver_features_0_reg <= new_word;
+              publish_sysbus(GBUS_DRIVER_FEATURES_0, new_word);
             end else if (driver_features_sel_reg == 32'd1) begin
               driver_features_1_reg <= new_word;
+              publish_sysbus(GBUS_DRIVER_FEATURES_1, new_word);
             end
           end
           REG_DRIVER_FEATURES_SEL: driver_features_sel_reg <= new_word;
-          REG_GUEST_PAGE_SIZE: guest_page_size_reg <= new_word;
+          REG_GUEST_PAGE_SIZE: begin
+            guest_page_size_reg <= new_word;
+            publish_sysbus(GBUS_GUEST_PAGE_SIZE, new_word);
+          end
           REG_QUEUE_SEL: queue_sel_reg <= new_word;
           REG_QUEUE_NUM: begin
             if (queue_sel_reg < NUM_QUEUES) begin
               queue_num_reg[q] <= new_word;
+              publish_sysbus(GBUS_QUEUE_BASE +
+                             queue_sel_reg * GBUS_QUEUE_STRIDE,
+                             new_word);
             end
           end
           REG_QUEUE_ALIGN: begin
             if (queue_sel_reg < NUM_QUEUES) begin
               queue_align_reg[q] <= new_word;
+              publish_sysbus(GBUS_QUEUE_BASE +
+                             queue_sel_reg * GBUS_QUEUE_STRIDE + 32'h04,
+                             new_word);
             end
           end
           REG_QUEUE_PFN: begin
             if (queue_sel_reg < NUM_QUEUES) begin
               queue_pfn_reg[q] <= new_word;
               queue_ready_reg[q] <= {31'h0, (new_word != 32'h0000_0000)};
+              publish_sysbus(GBUS_QUEUE_BASE +
+                             queue_sel_reg * GBUS_QUEUE_STRIDE + 32'h08,
+                             new_word);
+              publish_sysbus_later(
+                GBUS_QUEUE_BASE + queue_sel_reg * GBUS_QUEUE_STRIDE + 32'h0c,
+                {31'h0, (new_word != 32'h0000_0000)});
             end
           end
           REG_QUEUE_READY: begin
             if (queue_sel_reg < NUM_QUEUES) begin
               queue_ready_reg[q] <= {31'h0, new_word[0]};
+              publish_sysbus(GBUS_QUEUE_BASE +
+                             queue_sel_reg * GBUS_QUEUE_STRIDE + 32'h0c,
+                             {31'h0, new_word[0]});
             end
           end
           REG_QUEUE_NOTIFY: begin
             if (new_word < NUM_QUEUES) begin
               queue_notify_seq_reg[new_word[$clog2(NUM_QUEUES)-1:0]] <=
                 queue_notify_seq_reg[new_word[$clog2(NUM_QUEUES)-1:0]] + 32'd1;
+              publish_sysbus(
+                GBUS_QUEUE_BASE + new_word * GBUS_QUEUE_STRIDE + 32'h10,
+                queue_notify_seq_reg[
+                  new_word[$clog2(NUM_QUEUES)-1:0]] + 32'd1);
             end
           end
           REG_INTERRUPT_ACK: interrupt_status_reg <= interrupt_status_reg & ~new_word;
@@ -331,8 +350,12 @@ module virtio_gbus_mmio_blk_top (
             if (new_word == 32'h0000_0000) begin
               clear_driver_state();
               reset_seq_reg <= reset_seq_reg + 32'd1;
+              publish_sysbus(GBUS_STATUS, 32'h0000_0000);
+              publish_sysbus_later(GBUS_RESET_SEQ,
+                                   reset_seq_reg + 32'd1);
             end else begin
               status_reg <= new_word;
+              publish_sysbus(GBUS_STATUS, new_word);
             end
           end
           default: begin

@@ -49,11 +49,11 @@ VIRTIO_CFLAGS := -Ivirtio
 # Backend module switches. Set any of these to n/0/false to omit that
 # backend implementation from libMyVirtio_backend.a.
 BACKEND_BLK ?= y
-BACKEND_NET ?= y
-BACKEND_CONSOLE ?= y
-BACKEND_GPU ?= y
-BACKEND_INPUT ?= y
-BACKEND_UI_VNC ?= y
+BACKEND_NET ?= n
+BACKEND_CONSOLE ?= n
+BACKEND_GPU ?= n
+BACKEND_INPUT ?= n
+BACKEND_UI_VNC ?= n
 
 backend_enabled = $(filter 1 y yes true,$(strip $(1)))
 BACKEND_DEFS := \
