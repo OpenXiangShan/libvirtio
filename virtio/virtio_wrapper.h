@@ -12,6 +12,7 @@
 #define VIRTIO_EMU_NAME_KEYBOARD "virtio_keyboard"
 #define VIRTIO_EMU_NAME_MOUSE   "virtio_mouse"
 #define VIRTIO_EMU_NAME_TABLET  "virtio_tablet"
+#define VIRTIO_EMU_NAME_GENIRQ  "virtio_genirq"
 
 typedef void *virtio_handle_t;
 
@@ -80,6 +81,10 @@ struct libvirtio_input_ops {
 	int (*status)(void *event, int len, void *priv);
 };
 
+struct libvirtio_genirq_ops {
+	int (*send_msi)(uint64_t addr, uint32_t data, void *priv);
+};
+
 struct libvirtio_ops {
 	int      (*vprint)(const char *fmt, va_list ap) __attribute__((format(printf, 1, 0)));
 	uint64_t (*mm_alloc)(int size);
@@ -96,6 +101,7 @@ struct libvirtio_ops {
 	struct   libvirtio_console_ops console_ops;
 	struct   libvirtio_gpu_ops gpu_ops;
 	struct   libvirtio_input_ops input_ops;
+	struct   libvirtio_genirq_ops genirq_ops;
 };
 
 struct virtio_gbus_ops {

@@ -9,6 +9,7 @@
 #include "virtio_console.h"
 #include "virtio_gpu.h"
 #include "virtio_input.h"
+#include "virtio_genirq.h"
 
 /*
  * Copyright (c) 2026 Beijing Institute of Open Source Chip (BOSC)
@@ -74,6 +75,12 @@ static struct virtio_wrapper_dev_info virtio_dev_info[] = {
 		virtio_tablet_emulator_create,
 		{ .class_code = 0x09, .subclass = 0x02,
 		  .device_cfg_len = sizeof(struct virtio_input_config) },
+	},
+	{
+		VIRTIO_EMU_NAME_GENIRQ,
+		virtio_genirq_emulator_create,
+		{ .class_code = 0xff, .subclass = 0x00,
+		  .device_cfg_len = sizeof(struct virtio_genirq_config) },
 	},
 };
 
