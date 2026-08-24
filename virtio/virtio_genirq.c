@@ -263,7 +263,7 @@ static int virtio_genirq_init_vq_addr(struct virtio_device *dev, uint32_t vq,
 	if (vq != VIRTIO_GENIRQ_CMD_QUEUE)
 		return -1;
 
-	return virtio_queue_setup_split(dev, &gdev->vqs[vq], desc_addr,
+	return virtio_queue_setup_addr(dev, &gdev->vqs[vq], desc_addr,
 					avail_addr, used_addr, size);
 }
 
