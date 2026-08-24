@@ -109,6 +109,10 @@ struct virtio_gbus_ops {
 	int (*write)(void *opaque, uint32_t addr, uint32_t val);
 };
 
+struct virtio_mmio_options {
+	bool packed;
+};
+
 int virtio_receive(virtio_handle_t handle, void *buf, int len);
 
 void virtio_process_req(virtio_handle_t handle);
@@ -120,6 +124,9 @@ int virtio_mmio_write(virtio_handle_t handle, uint64_t addr, uint32_t val,
 		      int len, int *is_doorbell);
 virtio_handle_t virtio_mmio_create(const char *name, uint64_t start, int len,
 				   struct libvirtio_ops *ops, void *priv);
+virtio_handle_t virtio_mmio_create_ex(const char *name, uint64_t start, int len,
+				      struct libvirtio_ops *ops, void *priv,
+				      const struct virtio_mmio_options *opts);
 virtio_handle_t virtio_gbus_create(const char *name, uint64_t start, int len,
 				   struct libvirtio_ops *ops, void *priv,
 				   const struct virtio_gbus_ops *gbus_ops,
