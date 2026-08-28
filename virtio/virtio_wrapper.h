@@ -25,6 +25,8 @@ enum {
 	VIRTIO_GBUS_CSR_DRIVER_FEATURES_1 = 0x0018,
 	VIRTIO_GBUS_CSR_GUEST_PAGE_SIZE = 0x001c,
 	VIRTIO_GBUS_CSR_RESET_SEQ = 0x0020,
+	VIRTIO_GBUS_CSR_TRANSPORT_FEATURES_0 = 0x0024,
+	VIRTIO_GBUS_CSR_TRANSPORT_FEATURES_1 = 0x0028,
 	VIRTIO_GBUS_CSR_BLK_CAPACITY_LOW = 0x0040,
 	VIRTIO_GBUS_CSR_BLK_CAPACITY_HIGH = 0x0044,
 	VIRTIO_GBUS_CSR_BLK_SEG_MAX = 0x0048,
@@ -34,17 +36,23 @@ enum {
 	VIRTIO_GBUS_CSR_NET_STATUS = 0x0068,
 	VIRTIO_GBUS_CSR_NET_MAX_QUEUE_PAIRS = 0x006c,
 	VIRTIO_GBUS_CSR_QUEUE_BASE = 0x0100,
-	VIRTIO_GBUS_CSR_QUEUE_STRIDE = 0x0020,
+	VIRTIO_GBUS_CSR_QUEUE_STRIDE = 0x0040,
 	VIRTIO_GBUS_CSR_QUEUE_NUM = 0x0000,
 	VIRTIO_GBUS_CSR_QUEUE_ALIGN = 0x0004,
 	VIRTIO_GBUS_CSR_QUEUE_PFN = 0x0008,
 	VIRTIO_GBUS_CSR_QUEUE_READY = 0x000c,
 	VIRTIO_GBUS_CSR_QUEUE_NOTIFY_SEQ = 0x0010,
+	VIRTIO_GBUS_CSR_QUEUE_DESC_LOW = 0x0014,
+	VIRTIO_GBUS_CSR_QUEUE_DESC_HIGH = 0x0018,
+	VIRTIO_GBUS_CSR_QUEUE_AVAIL_LOW = 0x001c,
+	VIRTIO_GBUS_CSR_QUEUE_AVAIL_HIGH = 0x0020,
+	VIRTIO_GBUS_CSR_QUEUE_USED_LOW = 0x0024,
+	VIRTIO_GBUS_CSR_QUEUE_USED_HIGH = 0x0028,
 	VIRTIO_GBUS_CSR_HOST_IRQ_SET = 0x0200,
 };
 
 #define VIRTIO_GBUS_MAGIC	0x73756267U /* "gbus" little-endian */
-#define VIRTIO_GBUS_VERSION	1U
+#define VIRTIO_GBUS_VERSION	2U
 #define VIRTIO_GBUS_HOST_IRQ_VRING	(1U << 0)
 #define VIRTIO_GBUS_HOST_IRQ_CONFIG	(1U << 1)
 
@@ -131,6 +139,11 @@ virtio_handle_t virtio_gbus_create(const char *name, uint64_t start, int len,
 				   struct libvirtio_ops *ops, void *priv,
 				   const struct virtio_gbus_ops *gbus_ops,
 				   void *gbus_opaque);
+virtio_handle_t virtio_gbus_create_ex(const char *name, uint64_t start, int len,
+				      struct libvirtio_ops *ops, void *priv,
+				      const struct virtio_gbus_ops *gbus_ops,
+				      void *gbus_opaque,
+				      const struct virtio_mmio_options *opts);
 int virtio_gbus_poll(virtio_handle_t handle);
 
 /* PCIe ECAM access interface */
