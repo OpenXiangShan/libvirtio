@@ -388,6 +388,7 @@ static void virtio_queue_packed_set_used_elem(struct virtio_queue *vq,
 	uint16_t id, flags;
 	uint32_t ret;
 	uint64_t desc_pa, id_pa, len_pa, flags_pa;
+	bool old_wrap_counter;
 	struct virtio_queue_packed_pending *pending;
 
 	if (!vq || head >= VIRTIO_QUEUE_MAX_DESC) {
@@ -433,8 +434,12 @@ static void virtio_queue_packed_set_used_elem(struct virtio_queue *vq,
 			 __FUNCTION__, flags_pa);
 	}
 
+	old_wrap_counter = vq->used_wrap_counter;
 	virtio_queue_packed_advance(&vq->used_idx, &vq->used_wrap_counter,
 					    vq->desc_count, pending->ndescs);
+	if (old_wrap_counter != vq->used_wrap_counter) {
+		vq->last_used_signalled_valid = false;
+	}
 	pending->valid = false;
 	pending->ndescs = 0;
 }
