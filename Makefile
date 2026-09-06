@@ -45,6 +45,9 @@ LIBVNCSERVER_CMAKE_FLAGS := \
 	-DWITH_EXAMPLES=OFF \
 	-DWITH_TESTS=OFF
 VIRTIO_CFLAGS := -Ivirtio
+IOMMU_REFMODEL_DIR := third_party/iommu_refmodel
+IOMMU_REFMODEL_CFLAGS := -I$(IOMMU_REFMODEL_DIR)/include \
+	-I$(IOMMU_REFMODEL_DIR)/libiommu/include
 
 # Backend module switches. Set any of these to n/0/false to omit that
 # backend implementation from libMyVirtio_backend.a.
@@ -70,10 +73,17 @@ VIRTIO_SRCS := virtio/fifo.c virtio/utils.c virtio/virtio.c \
 	virtio/virtio_gbus.c \
 	virtio/virtio_net.c virtio/virtio_gpu.c virtio/virtio_input.c \
 	virtio/virtio_genirq.c \
+	virtio/virtio_iommu.c \
 	virtio/virtio_pci.c \
 	virtio/virtio_wrapper.c
+VIRTIO_SRCS += $(IOMMU_REFMODEL_DIR)/src/iommu_refmodel_api.c \
+	$(IOMMU_REFMODEL_DIR)/src/io_virtio_iommu.c \
+	$(sort $(wildcard $(IOMMU_REFMODEL_DIR)/libiommu/src/*.c))
 VIRTIO_HEADERS := $(wildcard virtio/*.h)
-VIRTIO_OBJS := $(patsubst virtio/%.c,$(BUILD_DIR)/virtio/%.o,$(VIRTIO_SRCS))
+VIRTIO_OBJS := $(patsubst virtio/%.c,$(BUILD_DIR)/virtio/%.o,$(filter virtio/%.c,$(VIRTIO_SRCS)))
+IOMMU_REFMODEL_SRCS := $(filter third_party/iommu_refmodel/%.c,$(VIRTIO_SRCS))
+IOMMU_REFMODEL_OBJS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(IOMMU_REFMODEL_SRCS))
+VIRTIO_OBJS += $(IOMMU_REFMODEL_OBJS)
 BACKEND_SRCS := backend/virtio_backend.c backend/virtio_backend_queue.c \
 	backend/virtio_backend_ui.c
 BACKEND_ARCHIVES :=
@@ -136,7 +146,15 @@ $(BACKEND_TARGET): $(BACKEND_OBJS) $(BACKEND_ARCHIVES)
 
 $(BUILD_DIR)/virtio/%.o: virtio/%.c $(VIRTIO_HEADERS)
 	@mkdir -p $(BUILD_DIR)/virtio
-	$(CC) $(CFLAGS) $(VIRTIO_CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) $(VIRTIO_CFLAGS) $(IOMMU_REFMODEL_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/third_party/iommu_refmodel/%.o: \
+		third_party/iommu_refmodel/%.c \
+		$(wildcard third_party/iommu_refmodel/include/*.h) \
+		$(wildcard third_party/iommu_refmodel/libiommu/include/*.h)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(IOMMU_REFMODEL_CFLAGS) -Wno-unused-parameter \
+		-Wno-implicit-fallthrough -Wno-uninitialized -c $< -o $@
 
 $(BUILD_DIR)/backend/%.backend.o: backend/%.c $(BACKEND_HEADERS)
 	@mkdir -p $(BUILD_DIR)/backend
