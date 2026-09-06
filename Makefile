@@ -112,8 +112,10 @@ BACKEND_HEADERS := $(wildcard backend/*.h)
 BACKEND_OBJS := $(patsubst backend/%.c,$(BUILD_DIR)/backend/%.backend.o,$(BACKEND_SRCS))
 TARGET := $(OUTPUT_DIR)/libMyVirtio.a
 BACKEND_TARGET := $(OUTPUT_DIR)/libMyVirtio_backend.a
+TEST_SRCS := tests/virtio_iommu_smoke.c
+TEST_BINS := $(patsubst tests/%.c,$(BUILD_DIR)/tests/%,$(TEST_SRCS))
 
-.PHONY: all clean
+.PHONY: all clean test
 
 all: $(TARGET) $(BACKEND_TARGET)
 
@@ -162,6 +164,13 @@ $(BUILD_DIR)/backend/%.backend.o: backend/%.c $(BACKEND_HEADERS)
 
 $(BUILD_DIR)/backend/virtio_backend_ui_vnc.backend.o: $(LIBVNCSERVER_ARCHIVE)
 $(BUILD_DIR)/backend/virtio_backend_net.backend.o: $(LIBSLIRP_ARCHIVE)
+
+$(BUILD_DIR)/tests/%: tests/%.c $(TARGET)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $(VIRTIO_CFLAGS) $< $(TARGET) -o $@
+
+test: all $(TEST_BINS)
+	@for test_bin in $(TEST_BINS); do "$$test_bin"; done
 
 clean:
 	rm -rf $(BUILD_DIR)
