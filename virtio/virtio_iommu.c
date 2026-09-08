@@ -501,8 +501,8 @@ static int virtio_iommu_enqueue_fault(struct virtio_iommu_dev *idev,
 	unsigned int tail;
 
 	/* The operation's explicit endpoint/address/access are authoritative.
-	 * Do not pop the refmodel FQ here: FQ access may require a guest-memory
-	 * callback, while this path is deliberately a non-yielding fault enqueue.
+	 * Keep this path to a copied record and a wakeup; retire native shadow
+	 * diagnostics in the IOMMU service context, not in the endpoint callback.
 	 */
 	if (idev->fault_count == VIRTIO_IOMMU_FAULT_BACKLOG) {
 		uint64_t dropped = ++idev->faults_dropped;
@@ -510,6 +510,7 @@ static int virtio_iommu_enqueue_fault(struct virtio_iommu_dev *idev,
 		if (!(dropped & (dropped - 1)))
 			my_print(idev->vdev, "virtio-iommu: fault backlog full, dropped=%llu\n",
 				 (unsigned long long)dropped);
+		idev->work_notify(idev->work_opaque, VIRTIO_IOMMU_WORK_EVENT);
 		return -ENOSPC;
 	}
 	tail = (idev->fault_head + idev->fault_count) % VIRTIO_IOMMU_FAULT_BACKLOG;
@@ -553,6 +554,7 @@ int virtio_iommu_get_fault_stats(virtio_handle_t handle,
 int virtio_iommu_drain_faults(virtio_handle_t handle, unsigned int budget)
 {
 	struct virtio_iommu_dev *idev = virtio_iommu_from_handle(handle);
+	IoVirtioIommuFault native;
 	struct virtio_queue *vq;
 	unsigned int attempted = 0;
 	int delivered = 0;
@@ -562,6 +564,12 @@ int virtio_iommu_drain_faults(virtio_handle_t handle, unsigned int budget)
 	if (idev->servicing)
 		return -EBUSY;
 	idev->servicing = true;
+	/* Native FQ lives in C shadow RAM, not in the guest Event VQ. Retire
+	 * its diagnostics even without guest buffers; queued wire events retain
+	 * the explicit faulting operation's identity, independent of FQ order.
+	 */
+	while (!io_virtio_iommu_pop_fault(idev->refmodel, &native))
+		;
 	vq = &idev->vqs[VIRTIO_IOMMU_EVENT_VQ];
 	while (idev->fault_count && attempted < budget) {
 		struct virtio_iommu_fault fault;
