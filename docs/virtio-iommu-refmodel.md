@@ -254,7 +254,8 @@ kvm_riscv_aia_dma_detach()
 按标准 Request VQ completion / IOTLB sync 顺序使用映射。
 `report_fault()` 只复制本次访问的 endpoint、地址和权限到 C 内存 FIFO，
 通知 EVENT 工作，不读写 guest VQ，也不会因 fault report 而 yield。
-native FQ 中的诊断记录在此退休，不用旧记录覆盖本次访问的信息。
+故障记录由调用方提供的 endpoint、地址和权限确定，不会被旧的 native FQ
+记录覆盖；需要读取 native FQ 时必须在可 yield 的 IOMMU 工作上下文中完成。
 
 FIFO 容量固定为 128；无 Event VQ buffer 时保留记录，等待补充 buffer 的
 kick 或新故障再次唤醒，不自行忙循环。队列满时丢弃最新记录、返回

@@ -498,16 +498,12 @@ static int virtio_iommu_enqueue_fault(struct virtio_iommu_dev *idev,
 				     uint32_t access)
 {
 	struct virtio_iommu_fault *fault;
-	IoVirtioIommuFault native;
 	unsigned int tail;
 
-	/* Translation prechecks do not always produce a native FQ entry. The
-	 * operation's explicit endpoint/address/access are authoritative; never
-	 * overwrite them with an older native record. Retire shadow-only FQ
-	 * diagnostics here so deferred guest reporting cannot fill the native FQ.
+	/* The operation's explicit endpoint/address/access are authoritative.
+	 * Do not pop the refmodel FQ here: FQ access may require a guest-memory
+	 * callback, while this path is deliberately a non-yielding fault enqueue.
 	 */
-	while (!io_virtio_iommu_pop_fault(idev->refmodel, &native))
-		;
 	if (idev->fault_count == VIRTIO_IOMMU_FAULT_BACKLOG) {
 		uint64_t dropped = ++idev->faults_dropped;
 
