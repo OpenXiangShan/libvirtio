@@ -112,7 +112,7 @@ BACKEND_HEADERS := $(wildcard backend/*.h)
 BACKEND_OBJS := $(patsubst backend/%.c,$(BUILD_DIR)/backend/%.backend.o,$(BACKEND_SRCS))
 TARGET := $(OUTPUT_DIR)/libMyVirtio.a
 BACKEND_TARGET := $(OUTPUT_DIR)/libMyVirtio_backend.a
-TEST_SRCS := tests/virtio_iommu_smoke.c
+TEST_SRCS := tests/virtio_iommu_smoke.c tests/virtio_blk_dma_test.c
 TEST_BINS := $(patsubst tests/%.c,$(BUILD_DIR)/tests/%,$(TEST_SRCS))
 
 .PHONY: all clean test

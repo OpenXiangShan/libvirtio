@@ -87,11 +87,10 @@ static void virtio_blk_req_complete(struct virtio_device *dev,
 
 	if (req->read_iov && req->len && req->data &&
 	    (flags == MY_BLK_REQ_READ)) {
-		virtio_buf_to_iovec_write(dev,
-					  req->read_iov,
-					  req->read_iov_cnt,
-					  req->data,
-					  req->len);
+		if (virtio_buf_to_iovec_write(dev, req->read_iov,
+					      req->read_iov_cnt, req->data,
+					      req->len) != req->len)
+			status = VMM_VIRTIO_BLK_S_IOERR;
 	}
 
 	if (req->read_iov) {
@@ -200,7 +199,13 @@ static void virtio_blk_req_process(void *data)
 				my_print(dev, "%s: %s malloc failed, len:%d\n", __FUNCTION__, VMM_VIRTIO_BLK_T_IN, req->len);
 				continue;
 			}
-			virtio_iovec_to_buf_read(dev, &vbdev->iov[1], iov_cnt - 2, req->data, req->len);
+			if (virtio_iovec_to_buf_read(dev, &vbdev->iov[1],
+						     iov_cnt - 2, req->data,
+						     req->len) != req->len) {
+				virtio_blk_req_complete(dev, vbdev, req,
+					MY_BLK_REQ_WRITE, VMM_VIRTIO_BLK_S_IOERR);
+				break;
+			}
 			//my_print(dev, "%s: VIRTIO_BLK_T_OUT dev=%s "
 			//	 "hdr.sector=0x%lx req->len=%d\n",
 			//	 __FUNCTION__, dev->name,
