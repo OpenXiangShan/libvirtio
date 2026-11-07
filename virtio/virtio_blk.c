@@ -270,19 +270,22 @@ static void virtio_blk_set_guest_features(struct virtio_device *dev,
 	vbdev->features |= ((u64)features << (select * 32));
 }
 
-static int virtio_blk_init_vq(struct virtio_device *dev,
-			      uint32_t vq, uint32_t page_size, uint32_t align,
-			      uint32_t pfn)
+static int virtio_blk_init_vq(struct virtio_device *dev, uint32_t vq,
+			      uint32_t page_size, uint32_t align, uint32_t pfn)
 {
 	int ret;
 	struct virtio_blk_dev *vbdev = dev->emu_data;
 
-	//my_print(dev, "%s vq:0x%x page_size:0x%x align:0x%x pfn:0x%x\n", __FUNCTION__, vq, page_size, align, pfn);
+	// my_print(dev, "%s vq:0x%x page_size:0x%x align:0x%x pfn:0x%x\n",
+	// __FUNCTION__, vq, page_size, align, pfn);
 
 	switch (vq) {
 	case VIRTIO_BLK_IO_QUEUE:
 		ret = virtio_queue_setup(dev, &vbdev->vqs[vq], pfn, page_size,
-					 VIRTIO_BLK_QUEUE_SIZE, align);
+					 (vbdev->vqs[vq].desc_count
+					      ? vbdev->vqs[vq].desc_count
+					      : VIRTIO_BLK_QUEUE_SIZE),
+					 align);
 		break;
 	default:
 		ret = -1;
@@ -358,10 +361,15 @@ static int virtio_blk_get_size_vq(struct virtio_device *dev, uint32_t vq)
 	return ret;
 }
 
-static int virtio_blk_set_size_vq(struct virtio_device *dev,
-				  uint32_t vq, int size)
+static int virtio_blk_set_size_vq(struct virtio_device *dev, uint32_t vq,
+				  int size)
 {
-	//my_print(dev, "%s vq:0x%x size:0x%x warning !!!\n", __FUNCTION__, vq, size);
+	struct virtio_blk_dev *vbdev = dev ? dev->emu_data : NULL;
+
+	if (!vbdev || vq >= VIRTIO_BLK_NUM_QUEUES || size <= 0 ||
+	    size > VIRTIO_BLK_QUEUE_SIZE || (size & (size - 1)))
+		return -1;
+	vbdev->vqs[vq].desc_count = size;
 	return size;
 }
 

@@ -395,7 +395,10 @@ static int virtio_net_init_vq(struct virtio_device *dev, uint32_t vq,
 		return -1;
 
 	rc = virtio_queue_setup(dev, &ndev->vqs[vq].vq, pfn, page_size,
-				VIRTIO_NET_QUEUE_SIZE, align);
+				(ndev->vqs[vq].vq.desc_count
+				     ? ndev->vqs[vq].vq.desc_count
+				     : VIRTIO_NET_QUEUE_SIZE),
+				align);
 	if (!rc) {
 		ndev->vqs[vq].valid = 1;
 	}
@@ -448,10 +451,15 @@ static int virtio_net_get_size_vq(struct virtio_device *dev, uint32_t vq)
 	return VIRTIO_NET_QUEUE_SIZE;
 }
 
-static int virtio_net_set_size_vq(struct virtio_device *dev,
-				  uint32_t vq, int size)
+static int virtio_net_set_size_vq(struct virtio_device *dev, uint32_t vq,
+				  int size)
 {
-	/* FIXME: dynamic */
+	struct virtio_net_dev *ndev = dev ? dev->emu_data : NULL;
+
+	if (!ndev || vq >= ndev->max_queues || size <= 0 ||
+	    size > VIRTIO_NET_QUEUE_SIZE || (size & (size - 1)))
+		return -1;
+	ndev->vqs[vq].vq.desc_count = size;
 	return size;
 }
 

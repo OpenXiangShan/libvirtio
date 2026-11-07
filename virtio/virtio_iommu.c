@@ -93,15 +93,18 @@ static void virtio_iommu_set_guest_features(struct virtio_device *dev,
 }
 
 static int virtio_iommu_init_vq(struct virtio_device *dev, uint32_t vq,
-					uint32_t page_size, uint32_t align,
-					uint32_t pfn)
+				uint32_t page_size, uint32_t align,
+				uint32_t pfn)
 {
 	struct virtio_iommu_dev *idev = dev ? dev->emu_data : NULL;
 
 	if (!idev || vq >= VIRTIO_IOMMU_NUM_VQS)
 		return -1;
 	return virtio_queue_setup(dev, &idev->vqs[vq], pfn, page_size,
-				  VIRTIO_IOMMU_QUEUE_SIZE, align);
+				  (idev->vqs[vq].desc_count
+				       ? idev->vqs[vq].desc_count
+				       : VIRTIO_IOMMU_QUEUE_SIZE),
+				  align);
 }
 
 static int virtio_iommu_init_vq_addr(struct virtio_device *dev, uint32_t vq,
@@ -142,12 +145,14 @@ static int virtio_iommu_get_size_vq(struct virtio_device *dev, uint32_t vq)
 }
 
 static int virtio_iommu_set_size_vq(struct virtio_device *dev, uint32_t vq,
-					    int size)
+				    int size)
 {
-	(void)dev;
-	if (vq >= VIRTIO_IOMMU_NUM_VQS || size <= 0 ||
-	    size > VIRTIO_QUEUE_MAX_DESC)
+	struct virtio_iommu_dev *idev = dev ? dev->emu_data : NULL;
+
+	if (!idev || vq >= VIRTIO_IOMMU_NUM_VQS || size <= 0 ||
+	    size > VIRTIO_IOMMU_QUEUE_SIZE || (size & (size - 1)))
 		return -1;
+	idev->vqs[vq].desc_count = size;
 	return size;
 }
 

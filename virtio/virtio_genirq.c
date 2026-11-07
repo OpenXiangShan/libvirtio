@@ -242,8 +242,8 @@ static void virtio_genirq_set_guest_features(struct virtio_device *dev,
 }
 
 static int virtio_genirq_init_vq(struct virtio_device *dev, uint32_t vq,
-					uint32_t page_size, uint32_t align,
-					uint32_t pfn)
+				 uint32_t page_size, uint32_t align,
+				 uint32_t pfn)
 {
 	struct virtio_genirq_dev *gdev = dev->emu_data;
 
@@ -251,7 +251,10 @@ static int virtio_genirq_init_vq(struct virtio_device *dev, uint32_t vq,
 		return -1;
 
 	return virtio_queue_setup(dev, &gdev->vqs[vq], pfn, page_size,
-				  VIRTIO_GENIRQ_QUEUE_SIZE, align);
+				  (gdev->vqs[vq].desc_count
+				       ? gdev->vqs[vq].desc_count
+				       : VIRTIO_GENIRQ_QUEUE_SIZE),
+				  align);
 }
 
 static int virtio_genirq_init_vq_addr(struct virtio_device *dev, uint32_t vq,
@@ -293,8 +296,14 @@ static int virtio_genirq_get_size_vq(struct virtio_device *dev, uint32_t vq)
 }
 
 static int virtio_genirq_set_size_vq(struct virtio_device *dev, uint32_t vq,
-					    int size)
+				     int size)
 {
+	struct virtio_genirq_dev *gdev = dev ? dev->emu_data : NULL;
+
+	if (!gdev || vq >= 1 || size <= 0 || size > VIRTIO_GENIRQ_QUEUE_SIZE ||
+	    (size & (size - 1)))
+		return -1;
+	gdev->vqs[vq].desc_count = size;
 	return size;
 }
 

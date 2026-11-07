@@ -76,8 +76,8 @@ static void virtio_console_set_guest_features(struct virtio_device *dev,
 
 }
 
-static int virtio_console_init_vq(struct virtio_device *dev,
-				  uint32_t vq, uint32_t page_size, uint32_t align,
+static int virtio_console_init_vq(struct virtio_device *dev, uint32_t vq,
+				  uint32_t page_size, uint32_t align,
 				  uint32_t pfn)
 {
 	int rc;
@@ -86,8 +86,11 @@ static int virtio_console_init_vq(struct virtio_device *dev,
 	switch (vq) {
 	case VIRTIO_CONSOLE_RX_QUEUE:
 	case VIRTIO_CONSOLE_TX_QUEUE:
-		rc = virtio_queue_setup(dev, &cdev->vqs[vq], pfn,
-					page_size, VIRTIO_CONSOLE_QUEUE_SIZE, align);
+		rc = virtio_queue_setup(dev, &cdev->vqs[vq], pfn, page_size,
+					(cdev->vqs[vq].desc_count
+					     ? cdev->vqs[vq].desc_count
+					     : VIRTIO_CONSOLE_QUEUE_SIZE),
+					align);
 		break;
 	default:
 		rc = -1;
@@ -163,9 +166,15 @@ static int virtio_console_get_size_vq(struct virtio_device *dev, uint32_t vq)
 	return rc;
 }
 
-static int virtio_console_set_size_vq(struct virtio_device *dev,
-				      uint32_t vq, int size)
+static int virtio_console_set_size_vq(struct virtio_device *dev, uint32_t vq,
+				      int size)
 {
+	struct virtio_console_dev *cdev = dev ? dev->emu_data : NULL;
+
+	if (!cdev || vq >= 2 || size <= 0 || size > VIRTIO_CONSOLE_QUEUE_SIZE ||
+	    (size & (size - 1)))
+		return -1;
+	cdev->vqs[vq].desc_count = size;
 	return size;
 }
 
